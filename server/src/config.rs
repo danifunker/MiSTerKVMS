@@ -28,6 +28,9 @@ pub struct StreamConfig {
     pub mister_port: u16,
     /// JPEG quality for raw cards and scaled pictures (1–100).
     pub quality: u8,
+    /// Off: the stream is kept but not run, so its card is free for other
+    /// apps (OBS…). Missing in older files: on.
+    pub enabled: bool,
 }
 
 impl Default for StreamConfig {
@@ -41,6 +44,7 @@ impl Default for StreamConfig {
             mister: String::new(),
             mister_port: 8182,
             quality: 85,
+            enabled: true,
         }
     }
 }
@@ -251,6 +255,14 @@ pub fn set_ini_value(dir: &Path, section: &str, key: &str, value: &str) -> std::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn streams_saved_before_the_switch_are_on() {
+        let s: Streams = serde_json::from_str(r#"{"streams":[{"name":"SS1","video":"usb:1"}]}"#).unwrap();
+        assert!(s.streams[0].enabled);
+        let off: Streams = serde_json::from_str(r#"{"streams":[{"name":"SS1","video":"usb:1","enabled":false}]}"#).unwrap();
+        assert!(!off.streams[0].enabled);
+    }
 
     #[test]
     fn template_parses_to_defaults() {

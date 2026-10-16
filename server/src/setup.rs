@@ -218,10 +218,19 @@ fn handle(server: Arc<Server>, mut request: Request) {
 
 fn state(server: &Server) -> serde_json::Value {
     let settings = server.settings();
-    let streams: Vec<serde_json::Value> = server
-        .streams()
-        .iter()
-        .map(|s| json!({ "config": s.config, "status": s.status(), "address": format!("mkvm://{}/{}", hostname_for_address(), encode_path(&s.config.name)) }))
+    // Every configured stream, in order; those turned off have no status.
+    let running = server.streams();
+    let streams: Vec<serde_json::Value> = config::load_streams(server.dir())
+        .streams
+        .into_iter()
+        .filter(|c| !c.name.trim().is_empty())
+        .map(|c| {
+            let address = format!("mkvm://{}/{}", hostname_for_address(), encode_path(&c.name));
+            match running.iter().find(|s| s.config.name == c.name) {
+                Some(s) => json!({ "config": s.config, "status": s.status(), "address": address }),
+                None => json!({ "config": c, "status": null, "address": address }),
+            }
+        })
         .collect();
     json!({
         "server": crate::server_name(),

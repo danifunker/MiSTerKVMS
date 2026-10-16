@@ -119,7 +119,8 @@ impl Server {
     }
 
     /// Start, stop or restart streams to match `wanted` (unchanged ones keep
-    /// running, and keep their viewers).
+    /// running, and keep their viewers). Streams turned off aren't run: only
+    /// running streams hold their cards.
     pub fn apply(&self, wanted: &Streams) {
         let mut streams = self.streams.lock().unwrap();
         let mut keep = Vec::new();
@@ -131,7 +132,7 @@ impl Server {
             }
         }
         for c in &wanted.streams {
-            if c.name.trim().is_empty() || keep.iter().any(|s| s.config == *c) {
+            if c.name.trim().is_empty() || !c.enabled || keep.iter().any(|s| s.config == *c) {
                 continue;
             }
             keep.push(Stream::start(c.clone()));
