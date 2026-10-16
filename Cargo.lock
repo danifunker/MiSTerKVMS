@@ -1936,6 +1936,7 @@ dependencies = [
  "kvms-capture",
  "kvms-codec",
  "kvms-core",
+ "libc",
  "mdns-sd",
  "mkvm",
  "serde",

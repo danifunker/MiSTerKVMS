@@ -3,13 +3,19 @@ name: Build & Release
 # Every push to main publishes a release. The version is MAJOR.MINOR from
 # Cargo.toml plus an auto-incremented patch (0.9.0, 0.9.1, ...). Bump the
 # version in Cargo.toml to start a new series (e.g. 0.10.0, 1.0.0).
-# Pull requests only build and test.
+# Pull requests only build and test. The iPhone app goes to TestFlight only
+# when something it's built from changed (scripts/ios-fingerprint.sh).
 
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      testflight:
+        description: Upload the iPhone app to TestFlight even if it hasn't changed
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -24,6 +30,8 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
+      ios_changed: ${{ steps.ios.outputs.changed }}
+      ios_fingerprint: ${{ steps.ios.outputs.fingerprint }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -37,6 +45,31 @@ jobs:
           if [ -z "$last" ]; then patch=0; else patch=$((last + 1)); fi
           echo "version=$base.$patch" >> "$GITHUB_OUTPUT"
           echo "Version $base.$patch"
+
+      # Compared with the last TestFlight upload (its testflight/<build> tag).
+      - name: Has the iPhone app changed?
+        id: ios
+        env:
+          FORCE: ${{ inputs.testflight }}
+        run: |
+          echo "::group::What the iPhone app is built from"
+          scripts/ios-fingerprint.sh --list
+          echo "::endgroup::"
+          now=$(scripts/ios-fingerprint.sh)
+          last=$(git tag -l 'testflight/*' --sort=-v:refname | head -1)
+          before=""
+          if [ -n "$last" ]; then before=$(git tag -l --format='%(contents:subject)' "$last"); fi
+          if [ "$FORCE" = "true" ]; then
+            changed=true; echo "TestFlight upload asked for"
+          elif [ -z "$last" ]; then
+            changed=true; echo "No TestFlight upload tagged yet"
+          elif [ "$now" != "$before" ]; then
+            changed=true; echo "Changed since $last"
+          else
+            changed=false; echo "Unchanged since $last: no TestFlight upload"
+          fi
+          echo "fingerprint=$now" >> "$GITHUB_OUTPUT"
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
 
   build-mac:
     needs: version
@@ -223,13 +256,57 @@ jobs:
           path: build/MiSTerKVMS-${{ env.VERSION }}-linux-x86_64.tar.gz
           archive: false
 
+      # MiSTerKVMS Capture for Linux: a .deb with the systemd service (the app
+      # tarball above carries the program too).
+      - name: Capture server (test, build, package)
+        run: |
+          cargo test -p misterkvms-capture -p kvms-capture
+          cargo build --release -p misterkvms-capture
+          scripts/package-capture-linux.sh "$VERSION"
+
+      # No capture card on the runner: the test pattern stands in for one.
+      - name: Capture server smoke test (stream the test pattern)
+        run: |
+          cfg="$RUNNER_TEMP/capture"
+          mkdir -p "$cfg"
+          printf '[setup]\ntest_pattern = true\n' > "$cfg/capture.ini"
+          target/release/misterkvms-capture --config "$cfg" devices
+          target/release/misterkvms-capture --config "$cfg" add --video test:pattern Test
+          target/release/misterkvms-capture --config "$cfg" serve > "$RUNNER_TEMP/serve.log" 2>&1 &
+          pid=$!
+          for _ in $(seq 30); do (echo > /dev/tcp/127.0.0.1/5970) 2>/dev/null && break; sleep 1; done
+          out=$(target/release/misterkvms-cli stream mkvm://127.0.0.1/Test --duration 4s) || { cat "$RUNNER_TEMP/serve.log"; exit 1; }
+          kill "$pid"
+          echo "$out"
+          echo "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["fps"] > 20 and d["audio_peak"] > 0, d'
+
+      # The .deb for real: it makes the user, starts the service, and goes
+      # away cleanly.
+      - name: Capture server .deb (install, run as a service, remove)
+        run: |
+          sudo apt-get install -y "./build/misterkvms-capture-$VERSION-linux-amd64.deb"
+          for _ in $(seq 30); do curl -sf http://localhost:5971/api/state > /dev/null && break; sleep 1; done
+          systemctl is-active misterkvms-capture
+          id -nG misterkvms | grep -qw video
+          curl -sf http://localhost:5971/api/service | python3 -c 'import json,sys; s=json.load(sys.stdin)["service"]; print(s); assert s["supported"] and s["installed"] and s["thisIsService"] and s["state"] == "running", s'
+          sudo apt-get remove -y misterkvms-capture
+          if systemctl is-active misterkvms-capture; then echo "still running after remove"; exit 1; fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: build/misterkvms-capture-${{ env.VERSION }}-linux-amd64.deb
+          archive: false
+
   # The iPhone app. Pushes to main (and manual runs on main) archive it and
   # upload it to TestFlight when the App Store Connect key and the team id
   # are set; everything else only checks that it builds (for the simulator).
   # It goes to TestFlight, not into the GitHub release, so it isn't part of
   # publish and an iOS problem never holds up the desktop release.
+  # Pull requests always build it (for the simulator); main builds and
+  # uploads it only when it changed.
   build-ios:
     needs: version
+    if: github.event_name == 'pull_request' || needs.version.outputs.ios_changed == 'true'
     runs-on: macos-26
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -281,6 +358,16 @@ jobs:
           fi
           trap 'rm -f "$ASC_KEY_PATH"' EXIT
           scripts/build-ios.sh --testflight
+
+      # The next run compares against this upload.
+      - name: Tag the upload
+        if: env.UPLOAD == 'true'
+        env:
+          FINGERPRINT: ${{ needs.version.outputs.ios_fingerprint }}
+        run: |
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            tag -a "testflight/$BUILD_NUMBER" -m "$FINGERPRINT" -m "MiSTerKVMS $VERSION ($BUILD_NUMBER) uploaded to TestFlight"
+          git push origin "testflight/$BUILD_NUMBER"
 
       - name: xcodebuild logs
         if: failure()
@@ -335,6 +422,8 @@ jobs:
           **Windows:** 64-bit Windows 10 or 11. Unzip \`MiSTerKVMS-$VERSION-win-x64.zip\` anywhere and run **MiSTerKVMS.exe**. Not code-signed yet: SmartScreen may warn the first time (More info → Run anyway). Recording needs [ffmpeg](https://ffmpeg.org) (\`winget install ffmpeg\`).
 
           **MiSTerKVMS Capture** (the PC with the capture cards): run \`misterkvms-capture.exe\` from the Windows zip (on the Mac: \`/Applications/MiSTerKVMS.app/Contents/MacOS/misterkvms-capture\`); its setup page opens at http://localhost:5971. Add a stream for each card there. On Windows, **Run in the background** installs it as a service that starts with the PC, and **Check for updates** updates it from these releases (\`misterkvms-capture-$VERSION-win-x64.exe\`). In the app, add a host and pick the stream, or a capture card plugged into that computer (Windows and Mac).
+
+          **MiSTerKVMS Capture on Linux** (x86_64, systemd): \`sudo apt install ./misterkvms-capture-$VERSION-linux-amd64.deb\` on Debian/Ubuntu (it runs as a service at boot; set it up at http://localhost:5971), or from the Linux tarball below: \`sudo ./misterkvms-capture service install\`. Capture cards through Video4Linux (USB sticks, cards with a V4L2 driver).
 
           **Linux:** x86_64, GNOME/KDE on Wayland (X11 works too); needs GTK 4.14+ and libadwaita 1.5+ (Ubuntu 24.04, Fedora 40 or newer). Unpack \`MiSTerKVMS-$VERSION-linux-x86_64.tar.gz\` and run \`./install.sh\` (or \`./misterkvms\` in place). Watches MiSTerKVMS Capture streams; recording needs ffmpeg.
 
