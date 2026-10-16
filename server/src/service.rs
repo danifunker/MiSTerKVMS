@@ -1,7 +1,8 @@
 //! Running in the background: a Windows service, or on Linux a systemd
-//! service, started at boot (docs/CAPTURE-SERVER.md §5.3). The setup page
-//! installs, starts, stops and removes it; the same actions are
-//! `misterkvms-capture service …`. The Linux side is in `linux` below.
+//! service, started at boot, or on macOS a launch agent, started at login
+//! (docs/CAPTURE-SERVER.md §5.3). The setup page installs, starts, stops and
+//! removes it; the same actions are `misterkvms-capture service …`. The
+//! Linux and macOS sides are in `linux` and `macos` below.
 //!
 //! The service runs `misterkvms-capture serve --service --config <dir>` as
 //! LocalSystem, so it shares the config folder with a copy started by
@@ -52,7 +53,7 @@ impl Action {
 pub struct Status {
     /// This OS has a service we manage (Windows, Linux with systemd).
     pub supported: bool,
-    /// "windows" or "linux": the page's wording.
+    /// "windows", "linux" or "macos": the page's wording.
     pub platform: String,
     /// Linux: the command that does what the page can't (it has no way to
     /// ask for the administrator password), e.g. `sudo … service install`.
@@ -69,7 +70,7 @@ pub struct Status {
 #[cfg(windows)]
 pub use win::*;
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod other {
     use super::*;
 
@@ -109,8 +110,300 @@ mod other {
     pub fn open_browser(_url: &str) {}
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub use other::*;
+
+#[cfg(target_os = "macos")]
+pub use macos::*;
+
+/// macOS: a launch agent for the user who sets it up, so it starts when they
+/// log in (a capture card and its Camera permission belong to a user's
+/// session). It runs the program inside MiSTerKVMS.app, so updating the app
+/// updates it: the agent notices its program changed and restarts.
+/// `~/Library/LaunchAgents/io.github.misterkvms.capture.plist`; config and
+/// `capture.log` in the usual folder. Nothing needs an administrator, so the
+/// setup page and the app's Capture Server settings do all of it.
+#[cfg(target_os = "macos")]
+mod macos {
+    use super::*;
+    use std::process::Command;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{Duration, SystemTime};
+
+    use crate::log;
+
+    pub const LABEL: &str = "io.github.misterkvms.capture";
+    /// The app the agent belongs to (System Settings > Login Items shows it).
+    const APP_ID: &str = "io.github.misterkvms.MiSTerKVMS";
+
+    static AS_SERVICE: AtomicBool = AtomicBool::new(false);
+
+    fn plist_path() -> PathBuf {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        PathBuf::from(home).join("Library/LaunchAgents").join(format!("{LABEL}.plist"))
+    }
+
+    fn domain() -> String {
+        format!("gui/{}", unsafe { libc::getuid() })
+    }
+
+    fn target() -> String {
+        format!("{}/{LABEL}", domain())
+    }
+
+    fn exe() -> PathBuf {
+        std::env::current_exe().and_then(|p| p.canonicalize()).unwrap_or_else(|_| PathBuf::from("misterkvms-capture"))
+    }
+
+    fn xml(s: &str) -> String {
+        s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    }
+
+    /// The agent's plist.
+    pub fn plist_text(bin: &Path, dir: &Path) -> String {
+        let args = [bin.display().to_string(), "serve".into(), "--service".into(), "--config".into(), dir.display().to_string()];
+        let args: String = args.iter().map(|a| format!("\t\t<string>{}</string>\n", xml(a))).collect();
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>{LABEL}</string>
+	<key>ProgramArguments</key>
+	<array>
+{args}	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>{APP_ID}</string>
+	</array>
+</dict>
+</plist>
+"#
+        )
+    }
+
+    fn launchctl(args: &[&str]) -> Result<String, String> {
+        let out = Command::new("launchctl").args(args).output().map_err(|e| format!("launchctl: {e}"))?;
+        if out.status.success() {
+            Ok(String::from_utf8_lossy(&out.stdout).to_string())
+        } else {
+            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            Err(if err.is_empty() { format!("launchctl {} failed", args.join(" ")) } else { err })
+        }
+    }
+
+    fn loaded() -> Option<String> {
+        launchctl(&["print", &target()]).ok()
+    }
+
+    pub fn running_as_service() -> bool {
+        AS_SERVICE.load(Ordering::Relaxed)
+    }
+
+    pub fn status() -> Status {
+        let path = plist_path();
+        let installed = path.exists();
+        let state = match loaded() {
+            Some(info) if info.lines().any(|l| l.trim() == "state = running") => "running",
+            _ if installed => "stopped",
+            _ => "",
+        };
+        // The program the plist runs: the first ProgramArguments string.
+        let bin = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|t| {
+                let rest = &t[t.find("<key>ProgramArguments</key>")?..];
+                let start = rest.find("<string>")? + "<string>".len();
+                let end = rest[start..].find("</string>")?;
+                Some(rest[start..start + end].replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
+            })
+            .unwrap_or_default();
+        Status {
+            supported: true,
+            platform: "macos".into(),
+            command: String::new(),
+            installed,
+            state: state.into(),
+            this_is_service: running_as_service(),
+            exe: bin,
+        }
+    }
+
+    /// `serve --service`, started by launchd: the log goes to `capture.log`,
+    /// and a new program (the app was updated) restarts it.
+    pub fn run(dir: PathBuf) -> Result<(), String> {
+        AS_SERVICE.store(true, Ordering::Relaxed);
+        log_to_file(&dir);
+        restart_when_updated();
+        crate::serve(dir, true)
+    }
+
+    /// No console under launchd: stderr (the log) to `capture.log`, keeping
+    /// the previous one as `capture.log.old` when it gets big.
+    fn log_to_file(dir: &Path) {
+        use std::os::fd::IntoRawFd;
+        let _ = std::fs::create_dir_all(dir);
+        let path = dir.join("capture.log");
+        if std::fs::metadata(&path).is_ok_and(|m| m.len() > 4 << 20) {
+            let _ = std::fs::rename(&path, dir.join("capture.log.old"));
+        }
+        if let Ok(file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            unsafe {
+                libc::dup2(file.into_raw_fd(), 2);
+            }
+        }
+    }
+
+    /// Updating MiSTerKVMS.app replaces this program: exit, and launchd
+    /// starts the new one (KeepAlive).
+    fn restart_when_updated() {
+        let path = exe();
+        let stamp = |p: &Path| std::fs::metadata(p).ok().map(|m| (m.len(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH)));
+        let Some(started) = stamp(&path) else { return };
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(20));
+            match stamp(&path) {
+                Some(now) if now != started => {
+                    // Let a copy in progress finish before starting it.
+                    std::thread::sleep(Duration::from_secs(5));
+                    log("the program was updated: restarting on the new one");
+                    std::process::exit(0);
+                }
+                _ => {}
+            }
+        });
+    }
+
+    fn install(dir: &Path) -> Result<(), String> {
+        let bin = exe();
+        let shown = bin.display().to_string();
+        if shown.contains("/AppTranslocation/") || shown.starts_with("/Volumes/") {
+            return Err("MiSTerKVMS is running from the disk image or a quarantined download: drag it to Applications, open it from there, then turn this on again".into());
+        }
+        let path = plist_path();
+        std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| format!("{}: {e}", path.display()))?;
+        std::fs::write(&path, plist_text(&bin, dir)).map_err(|e| format!("{}: {e}", path.display()))?;
+        // Load the new plist (and forget an earlier Stop).
+        let _ = launchctl(&["bootout", &target()]);
+        launchctl(&["enable", &target()])?;
+        launchctl(&["bootstrap", &domain(), &path.display().to_string()])?;
+        println!("MiSTerKVMS Capture runs in the background now, and starts when you log in.");
+        println!("Setup page: http://localhost:{}", crate::config::load_settings(dir).setup_port);
+        Ok(())
+    }
+
+    fn start() -> Result<(), String> {
+        let path = plist_path();
+        if !path.exists() {
+            return Err("not installed: misterkvms-capture service install".into());
+        }
+        launchctl(&["enable", &target()])?;
+        if loaded().is_some() {
+            launchctl(&["kickstart", &target()]).map(|_| ())
+        } else {
+            launchctl(&["bootstrap", &domain(), &path.display().to_string()]).map(|_| ())
+        }
+    }
+
+    /// Stopped until started again, also across logins.
+    fn stop() -> Result<(), String> {
+        let _ = launchctl(&["disable", &target()]);
+        if loaded().is_some() {
+            launchctl(&["bootout", &target()])?;
+        }
+        Ok(())
+    }
+
+    fn uninstall() -> Result<(), String> {
+        let _ = launchctl(&["bootout", &target()]);
+        let _ = launchctl(&["enable", &target()]);
+        let path = plist_path();
+        if path.exists() {
+            std::fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        println!("Removed: it no longer starts at login. Its streams and settings stay.");
+        Ok(())
+    }
+
+    pub fn cli(dir: &Path, action: Action) -> Result<(), String> {
+        match action {
+            Action::Install => install(dir),
+            Action::Uninstall => uninstall(),
+            Action::Start => start(),
+            Action::Stop => stop(),
+            Action::Restart => launchctl(&["kickstart", "-k", &target()]).map(|_| ()),
+            Action::Status => {
+                println!("{}", serde_json::to_string_pretty(&status()).unwrap_or_default());
+                Ok(())
+            }
+        }
+    }
+
+    /// From the setup page. Stopping or removing the agent from the agent
+    /// itself ends this process, so a helper does it; restarting is just
+    /// exiting (launchd starts it again).
+    pub fn request(dir: &Path, action: Action) -> Result<(), String> {
+        if running_as_service() {
+            match action {
+                Action::Restart => {
+                    log("restarting (launchd starts it again)");
+                    std::thread::spawn(|| {
+                        std::thread::sleep(Duration::from_millis(300));
+                        std::process::exit(0);
+                    });
+                    return Ok(());
+                }
+                Action::Stop | Action::Uninstall => {
+                    Command::new(exe())
+                        .args(["--config", &dir.display().to_string(), "service", action.arg()])
+                        .spawn()
+                        .map_err(|e| format!("{e}"))?;
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
+        cli(dir, action)
+    }
+
+    pub fn started_from_explorer() -> bool {
+        false
+    }
+    pub fn no_throttling() {}
+    pub fn update_download_path() -> Option<PathBuf> {
+        None
+    }
+    pub fn install_from(_exe: &Path, _dir: &Path) -> Result<(), String> {
+        Err("on a Mac the capture server comes with MiSTerKVMS: install the new DMG and it updates itself".into())
+    }
+    pub fn open_browser(url: &str) {
+        let _ = Command::new("open").arg(url).spawn();
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn plist_runs_the_program_with_its_config() {
+            let text = plist_text(Path::new("/Applications/MiSTerKVMS.app/Contents/MacOS/misterkvms-capture"), Path::new("/Users/a&b/Capture"));
+            assert!(text.contains("<string>/Applications/MiSTerKVMS.app/Contents/MacOS/misterkvms-capture</string>\n\t\t<string>serve</string>"));
+            assert!(text.contains("<string>/Users/a&amp;b/Capture</string>"));
+            assert!(text.contains("<key>KeepAlive</key>\n\t<true/>"));
+        }
+    }
+}
 
 #[cfg(target_os = "linux")]
 pub use linux::*;

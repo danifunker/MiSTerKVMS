@@ -44,8 +44,11 @@ lipo -create -output target/universal/libkvms_core.a \
 echo "==> Swift bindings"
 cargo run -q --release -p uniffi-bindgen --target aarch64-apple-darwin -- generate \
   --library target/aarch64-apple-darwin/release/libkvms_core.dylib --language swift --out-dir target/uniffi-swift-mac
-mkdir -p apple/Sources/KVMSCore/Generated
+# The Swift file is shared with the DMG build (scripts/build-mac.sh): keep its
+# header in step too.
+mkdir -p apple/Sources/KVMSCore/Generated apple/Sources/kvms_coreFFI/include
 cp target/uniffi-swift-mac/kvms_core.swift apple/Sources/KVMSCore/Generated/
+cp target/uniffi-swift-mac/kvms_coreFFI.h apple/Sources/kvms_coreFFI/include/
 cp target/uniffi-swift-mac/kvms_coreFFI.h "$OUT/headers/"
 cp target/uniffi-swift-mac/kvms_coreFFI.modulemap "$OUT/headers/module.modulemap"
 

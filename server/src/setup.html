@@ -287,7 +287,7 @@ function renderDevices() {
       <div class="shot" id="dev-${btoa(unescape(encodeURIComponent(d.id))).replace(/[^a-z0-9]/gi, "")}"><div class="msg">${stream ? `Shown above as “${esc(stream.config.name)}”` : `<button data-preview="${esc(d.id)}">Show picture</button>`}</div></div>
       <div class="body">
         <div class="title">${esc(d.name)}${stream ? "" : `<button class="primary" data-use="${esc(d.id)}">Add as stream</button>`}</div>
-        <div class="row"><span>${d.formats.length ? `best: ${fmt(d.best)}` : `<span class="warn">no formats: in use by another app${service && service.platform === "linux" ? ", or no permission (the video group)" : ", or a card Windows Media Foundation can't open (some AVerMedia cards)"}</span>`}</span></div>
+        <div class="row"><span>${d.formats.length ? `best: ${fmt(d.best)}` : `<span class="warn">no formats: in use by another app${service && service.platform === "linux" ? ", or no permission (the video group)" : service && service.platform === "macos" ? ", or no Camera permission (System Settings &gt; Privacy &amp; Security &gt; Camera)" : ", or a card Windows Media Foundation can't open (some AVerMedia cards)"}</span>`}</span></div>
         <div class="row"><span>audio: ${esc(d.audio || "none found")}</span></div>
       </div></div>`;
   }).join("");
@@ -529,7 +529,7 @@ $("saveRemoteAddress").onclick = async () => {
   catch (e) { if (e.message !== "cancelled") toast(e.message); }
 };
 
-// Run in the background: the Windows service.
+// Run in the background: the Windows service (Linux and macOS below).
 let service = null, svcBusy = "", svcError = "";
 
 async function loadService() {
@@ -546,6 +546,7 @@ function renderService() {
   const show = (id, on) => { $(id).hidden = !on; $(id).disabled = !s.local || !!svcBusy; };
   let status, hint;
   if (s.platform === "linux") { renderLinuxService(s, show); return; }
+  if (s.platform === "macos") { renderMacService(s, show); return; }
   if (svcBusy) {
     status = `<span class="warn"><span class="dot warn"></span>${esc(svcBusy)}</span>`;
     hint = "";
@@ -605,6 +606,39 @@ function renderLinuxService(s, show) {
   if (!s.local) $("allowLanHint").textContent = "This can only be changed on the capture PC itself.";
 }
 
+// macOS: a launch agent for this user (no administrator needed), started at
+// login; the MiSTerKVMS app's Settings > Capture Server does the same.
+function renderMacService(s, show) {
+  let status, hint;
+  if (svcBusy) {
+    status = `<span class="warn"><span class="dot warn"></span>${esc(svcBusy)}</span>`;
+    hint = "";
+  } else if (s.thisIsService) {
+    status = `<span class="ok"><span class="dot ok"></span>Running in the background: starts when you log in to this Mac.</span>`;
+    hint = `Program: <code>${esc(s.exe)}</code>. It updates with the MiSTerKVMS app; its log is <code>capture.log</code> in the config folder.`;
+  } else if (s.installed) {
+    status = `<span class="warn"><span class="dot warn"></span>Running by hand. The background copy is set up but ${esc(s.state || "not running")}.</span>`;
+    hint = "Starting it hands over: this copy closes and the background one carries on.";
+  } else {
+    status = `<span class="warn"><span class="dot warn"></span>Running by hand: quitting it stops the streams.</span>`;
+    hint = "Run it in the background to keep the streams going whenever you're logged in to this Mac (also MiSTerKVMS &gt; Settings &gt; Capture Server). MiSTerKVMS must be in Applications.";
+  }
+  if (!s.local) hint = "Setting this up only works on the Mac itself.";
+  if (svcError) hint = `<span class="warn">${esc(svcError)}</span>`;
+  $("svcStatus").innerHTML = status;
+  $("svcHint").innerHTML = hint;
+  $("svcInstall").textContent = "Run in the background";
+  $("svcStart").textContent = "Start";
+  show("svcInstall", !s.installed);
+  show("svcStart", s.installed && !s.thisIsService);
+  show("svcRestart", s.thisIsService);
+  show("svcStop", s.thisIsService);
+  show("svcUninstall", s.installed);
+  $("updCheck").disabled = !!svcBusy;
+  $("allowLan").disabled = !s.local;
+  if (!s.local) $("allowLanHint").textContent = "This can only be changed on the capture PC itself.";
+}
+
 /// Wait for the page to answer again (after a handover or restart).
 async function reconnect(wantService) {
   for (let i = 0; i < 90; i++) {
@@ -619,16 +653,21 @@ async function reconnect(wantService) {
 
 async function serviceAction(action, busy) {
   const s = service;
+  const mac = s.platform === "macos";
   if (s.thisIsService && (action === "stop" || action === "uninstall") &&
-      !confirm("This stops the streams, and this page, until you start misterkvms-capture.exe again. Continue?")) return;
+      !confirm(mac ? "This stops the streams, and this page, until you start it again in MiSTerKVMS > Settings > Capture Server. Continue?"
+                   : "This stops the streams, and this page, until you start misterkvms-capture.exe again. Continue?")) return;
   if (!s.thisIsService && s.installed && action === "uninstall" &&
-      !confirm("Remove the Windows service? This window keeps running.")) return;
+      !confirm(mac ? "Stop running it in the background? This copy keeps running." : "Remove the Windows service? This window keeps running.")) return;
+  svcError = "";
   svcBusy = busy; renderService();
   try {
     const r = await api("/api/service", { action });
     const goesAway = s.thisIsService ? action !== "status" : r.handover;
     if (s.thisIsService && (action === "stop" || action === "uninstall")) {
-      svcBusy = action === "stop" ? "Service stopped. Double-click misterkvms-capture.exe to start it again." : "Service removed. Double-click misterkvms-capture.exe to run it again.";
+      svcBusy = mac
+        ? (action === "stop" ? "Stopped. Start it again in MiSTerKVMS > Settings > Capture Server." : "Removed. Turn it on again in MiSTerKVMS > Settings > Capture Server.")
+        : (action === "stop" ? "Service stopped. Double-click misterkvms-capture.exe to start it again." : "Service removed. Double-click misterkvms-capture.exe to run it again.");
       renderService();
       return;
     }
@@ -645,15 +684,16 @@ async function serviceAction(action, busy) {
   } catch (e) {
     svcBusy = "";
     if (e.message !== "cancelled") {
-      if (s.platform === "linux") svcError = e.message;
+      if (s.platform === "linux" || mac) svcError = e.message;
       else toast(e.message);
     }
   }
   renderService();
 }
 
-$("svcInstall").onclick = () => serviceAction("install", "Installing… answer the Windows prompt (no prompt? look for a flashing shield in the taskbar).");
-$("svcStart").onclick = () => serviceAction("install", "Starting the service… answer the Windows prompt (no prompt? look for a flashing shield in the taskbar).");
+const winPrompt = " answer the Windows prompt (no prompt? look for a flashing shield in the taskbar).";
+$("svcInstall").onclick = () => serviceAction("install", service.platform === "macos" ? "Setting it up…" : "Installing…" + winPrompt);
+$("svcStart").onclick = () => service.platform === "macos" ? serviceAction("start", "Starting…") : serviceAction("install", "Starting the service…" + winPrompt);
 $("svcRestart").onclick = () => serviceAction("restart", "Restarting…");
 $("svcStop").onclick = () => serviceAction("stop", "Stopping…");
 $("svcUninstall").onclick = () => serviceAction("uninstall", "Removing the service…");
@@ -677,6 +717,8 @@ $("updCheck").onclick = async () => {
     } else {
       const how = service && service.platform === "linux"
         ? "Download the new .deb (or tarball) from the release page and install it: <code>sudo apt install ./misterkvms-capture-…-linux-amd64.deb</code>."
+        : service && service.platform === "macos"
+        ? "Install the new MiSTerKVMS DMG from the release page: the capture server updates with the app."
         : "Download it from the release page and double-click it: it updates the service.";
       $("updNote").innerHTML = `${esc(update.latest)} is out; this is ${esc(update.current)}. ${how}${notes}`;
     }

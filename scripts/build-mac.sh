@@ -76,7 +76,8 @@ cp "$BIN" "$APP/Contents/MacOS/MiSTerKVMS"
 # The command-line tool ships inside the app (signed and notarized with it).
 cp "$CLI_BIN" "$APP/Contents/MacOS/misterkvms-cli"
 ln -sf misterkvms-cli "$APP/Contents/MacOS/kvms" # old name, kept for one release
-# The capture server, for a Mac with capture cards (run from Terminal for now).
+# The capture server, for a Mac with capture cards: Settings > Capture Server
+# runs it as a launch agent (server/src/service.rs).
 cp "$SERVER_BIN" "$APP/Contents/MacOS/misterkvms-capture"
 cp apple/Info.plist "$APP/Contents/Info.plist"
 cp apple/Icon/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"

@@ -157,7 +157,7 @@ One TCP connection per viewer per stream, `TCP_NODELAY`. No TLS on the LAN.
 | OS | Runs as | Notes |
 |---|---|---|
 | Windows | Windows service (LocalSystem), at boot | Works from session 0: C3 below. Installed from the setup page. |
-| macOS | Background agent at login (`SMAppService`, registered by the app) | Camera/Microphone permission only exists in a user session, so not a boot-time daemon. A headless Mac needs auto-login. |
+| macOS | Launch agent for the user, at login (`~/Library/LaunchAgents/io.github.misterkvms.capture.plist`) | Camera/Microphone permission only exists in a user session, so not a boot-time daemon; a headless Mac needs auto-login. Runs the program inside MiSTerKVMS.app (which must be in Applications) and restarts when the app updates it; macOS asks for Camera and Microphone access the first time (the program carries its own Info.plist for that, `server/macos/`). No administrator needed, so the setup page and the app's Settings > Capture Server (DMG app only) install, start, stop and remove it; also `misterkvms-capture service …`. Log: `capture.log` in the config folder. |
 | Linux | systemd system service | Its own user, `misterkvms`, in the `video` and `audio` groups; config in `/var/lib/misterkvms-capture`. `sudo misterkvms-capture service install` (tarball) or the `.deb` sets it up; the page shows its state and the commands (it can't ask for the root password; pkexec on a desktop). Restart from the page works (systemd starts it again). |
 
 #### Windows service: what C3 found (October 2026, DANIHTPC)
@@ -403,7 +403,10 @@ removed, and saved NDI hosts migrate by MiSTer address (§8.1). 1.0 is
 released. **C9** for Linux (October 2026): V4L2 capture, the systemd
 service and the .deb are in (CI streams the test pattern and installs the
 .deb); the V4L2 backend (Alan's, raw ioctls) is tested on Ubuntu 24.04 with
-a UGREEN 25773 at 1080p60.
+a UGREEN 25773 at 1080p60. **C9** for macOS: the launch agent (§5.3), set
+up from the DMG app's Settings or the setup page; tested under launchd with
+the test pattern (install, hand over, restart, crash, update, stop, remove),
+not yet with a real card's Camera permission prompt.
 
 Rough size: C0–C4 about two weeks; C5–C7 about two weeks; C8–C10 about two
 more. The biggest risks are C3 (cards, and capture from a Windows service)

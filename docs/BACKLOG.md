@@ -31,8 +31,6 @@ The mrext wish list is in [PLANNING.md](PLANNING.md) §7 (we don't change mrext)
   preview. Needs reproducing on real hardware.
 - **Linux .deb and service on real hardware**: CI installs the .deb on a
   runner with the test pattern; ask Alan to try it with a card.
-- **macOS server**: background agent, signed bundle (C9). Today it ships
-  inside the DMG app but only runs from Terminal.
 - **Capture server in the Mac App Store app** ("Share this Mac's capture
   cards"): the App Store build is client only (apple/AppStore/README.md).
   The sandbox allows the server (listening, Bonjour, AVFoundation capture,
@@ -40,8 +38,8 @@ The mrext wish list is in [PLANNING.md](PLANNING.md) §7 (we don't change mrext)
   into a library the app runs in-process, a menu-bar icon so it keeps
   running without a window, and an "Open at login" switch
   (SMAppService.mainApp; Apple requires the user's consent). It runs only
-  while someone is logged in; updates come from the App Store. The DMG gets
-  the same, plus a real background agent.
+  while someone is logged in; updates come from the App Store. (The DMG app
+  runs it as a launch agent already: Settings > Capture Server.)
 - **Linux ARM** (Raspberry Pi as a capture PC).
 - **Tray and installer** outside Windows.
 

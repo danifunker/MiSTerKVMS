@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Embedded in the misterkvms-capture program (server/build.rs): run as
+	     a launch agent it is its own app to macOS, which asks for Camera and
+	     Microphone access with these words. -->
+	<key>CFBundleIdentifier</key>
+	<string>io.github.misterkvms.capture</string>
+	<key>CFBundleName</key>
+	<string>MiSTerKVMS Capture</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>NSCameraUsageDescription</key>
+	<string>MiSTerKVMS Capture streams the capture cards that show your MiSTers.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>MiSTerKVMS Capture streams the sound from the capture cards that show your MiSTers.</string>
+</dict>
+</plist>
