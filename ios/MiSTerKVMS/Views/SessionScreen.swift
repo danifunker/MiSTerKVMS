@@ -35,6 +35,15 @@ struct SessionScreen: View {
                     HStack(alignment: .top) {
                         misterButton
                         Spacer()
+                        Button { model.muted.toggle() } label: {
+                            Image(systemName: model.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .font(.system(size: 15))
+                                .frame(width: 40, height: 40)
+                                .background(Circle().fill(.black.opacity(0.5)))
+                                .contentTransition(.symbolEffect(.replace))
+                        }
+                        .tint(.white)
+                        .accessibilityLabel(model.muted ? "Unmute" : "Mute")
                         Button { menuOpen = true } label: {
                             Image(systemName: "slider.horizontal.3")
                                 .font(.system(size: 17))

@@ -4,7 +4,8 @@ import SwiftUI
 /// and Backspace. Each piece is shown or hidden on its own from the controls
 /// menu, and in Arrange mode each can be dragged anywhere on the screen; the
 /// places are remembered as fractions of the space above the keyboard.
-/// The chevron on the D-pad's corner collapses them all into one small round
+/// The D-pad also moves on its own: drag the handle on its top-left corner.
+/// The button on its other corner collapses them all into one small round
 /// button where the D-pad was; tapping that brings them back.
 struct QuickButtons: View {
     @Binding var arranging: Bool
@@ -36,7 +37,7 @@ struct QuickButtons: View {
     @ViewBuilder private var pieces: some View {
         if showDpad {
             Floating(id: "dpad", size: CGSize(width: DPad.size, height: DPad.size),
-                     initial: Self.dpadStart, arranging: arranging, opacity: opacity) {
+                     initial: Self.dpadStart, arranging: arranging, opacity: opacity, handle: true) {
                 DPad().overlay(alignment: .topTrailing) {
                     if !arranging { collapseButton }
                 }
@@ -88,12 +89,14 @@ struct QuickButtons: View {
     }
 }
 
-/// One piece placed at a remembered spot; draggable in Arrange mode only, so
-/// pressing a button never moves it.
+/// One piece placed at a remembered spot; draggable in Arrange mode, so
+/// pressing a button never moves it, or by its handle if it has one.
 private struct Floating<Content: View>: View {
     let size: CGSize
     let arranging: Bool
     let opacity: Double
+    /// A move handle on the top-left corner, outside Arrange mode.
+    let handle: Bool
     let content: Content
     @AppStorage private var x: Double
     @AppStorage private var y: Double
@@ -101,11 +104,12 @@ private struct Floating<Content: View>: View {
 
     static func key(_ id: String, _ axis: String) -> String { "quick.\(id).\(axis)" }
 
-    init(id: String, size: CGSize, initial: CGPoint, arranging: Bool, opacity: Double,
+    init(id: String, size: CGSize, initial: CGPoint, arranging: Bool, opacity: Double, handle: Bool = false,
          @ViewBuilder content: () -> Content) {
         self.size = size
         self.arranging = arranging
         self.opacity = opacity
+        self.handle = handle
         self.content = content()
         _x = AppStorage(wrappedValue: initial.x, Self.key(id, "x"))
         _y = AppStorage(wrappedValue: initial.y, Self.key(id, "y"))
@@ -120,6 +124,9 @@ private struct Floating<Content: View>: View {
                 .allowsHitTesting(!arranging)
                 .frame(width: size.width, height: size.height)
                 .opacity(arranging ? 1 : opacity)
+                .overlay(alignment: .topLeading) {
+                    if handle && !arranging { moveHandle(free: free) }
+                }
                 .overlay {
                     if arranging {
                         RoundedRectangle(cornerRadius: 14)
@@ -130,16 +137,35 @@ private struct Floating<Content: View>: View {
                 .contentShape(Rectangle())
                 .position(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
                 .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .updating($drag) { value, state, _ in state = value.translation }
-                        .onEnded { value in
-                            if free.width > 0 { x = min(1, max(0, (free.width * x + value.translation.width) / free.width)) }
-                            if free.height > 0 { y = min(1, max(0, (free.height * y + value.translation.height) / free.height)) }
-                        },
+                    move(free: free, in: .local),
                     // Only while arranging; otherwise the buttons get every touch.
                     including: arranging ? .all : .subviews
                 )
         }
+    }
+
+    /// Drag to a new spot, remembered as fractions of the free space.
+    private func move(free: CGSize, in space: CoordinateSpace) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: space)
+            .updating($drag) { value, state, _ in state = value.translation }
+            .onEnded { value in
+                if free.width > 0 { x = min(1, max(0, (free.width * x + value.translation.width) / free.width)) }
+                if free.height > 0 { y = min(1, max(0, (free.height * y + value.translation.height) / free.height)) }
+            }
+    }
+
+    /// Grab here to move the piece (it moves with the finger, so measured
+    /// on the screen rather than on itself).
+    private func moveHandle(free: CGSize) -> some View {
+        Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+            .font(.system(size: 12, weight: .bold))
+            .frame(width: 30, height: 30)
+            .background(Circle().fill(.black.opacity(0.8)))
+            .overlay(Circle().stroke(.white.opacity(0.4)))
+            .foregroundStyle(.white)
+            .contentShape(Circle().inset(by: -8))
+            .gesture(move(free: free, in: .global))
+            .accessibilityLabel("Move the arrows")
     }
 }
 
