@@ -326,8 +326,9 @@ uptime).
 | I3 | Pairing and secure transport (done) | `mkvm` secure mode with tests; server `devices.json`, pairing, LAN-only plain, Devices on the setup page; core and phone use it |
 | I4 | H.264 (C8) | server encodes (Windows hardware + openh264), Apple decodes with VideoToolbox; bitrate cap; Auto quality |
 | I5 | Away from home | phone on cellular through a forwarded port: picture, sound, input; switching Wi-Fi ↔ cellular reconnects |
-| I6 | TestFlight | icon, privacy strings, export compliance answered, build uploaded |
-| Later | iPad, landscape, hardware keyboard/mouse/controller, paste box, Opus audio, QUIC, pairing by QR code from outside the LAN | |
+| I6 | TestFlight (done) | icon, privacy strings, export compliance answered, build uploaded |
+| I7 | App Store | demo host for review, privacy policy, listing and screenshots, approved and released ([APP-STORE.md](APP-STORE.md)) |
+| Later | iPad, landscape, hardware keyboard/mouse/controller, paste box, Opus audio, QUIC, pairing by QR code from outside the LAN ([BACKLOG.md](BACKLOG.md)) | |
 
 ## 8. Risks and open questions
 
