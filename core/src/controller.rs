@@ -1537,11 +1537,14 @@ mod tests {
         let p = HostProfile { source: "local".into(), mister_host: "127.0.0.1".into(), mister_port: 9, ..Default::default() };
         c.save_profile(p.clone());
         c.open(p.id);
+        // Until the session reports in, the state still says "not connected"
+        // from close(): wait for the connect itself to fail.
+        let failed = || { let s = c.state().connection; matches!(s, ConnectionState::Disconnected { .. }) && s != not_connected() };
         let deadline = Instant::now() + Duration::from_secs(5);
-        while !matches!(c.state().connection, ConnectionState::Disconnected { .. }) && Instant::now() < deadline {
+        while !failed() && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(20));
         }
-        assert!(matches!(c.state().connection, ConnectionState::Disconnected { .. }));
+        assert!(failed(), "{:?}", c.state().connection);
         assert!(!events.0.lock().unwrap().contains(&ControllerEvent::CaptureRequested));
         c.set_capturing(true);
         assert!(c.state().capturing);
