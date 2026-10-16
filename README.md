@@ -118,7 +118,7 @@ Several MiSTers can be named under `machines` and picked with `--host` (or `-H`)
 
 ## Releases
 
-Every push to `main` builds a universal DMG, a Windows zip and a Linux tarball and publishes a GitHub release (`.github/workflows/release.yml`). The version is MAJOR.MINOR from `Cargo.toml` plus an auto-incremented patch (0.9.0, 0.9.1, …); bump `Cargo.toml` to start a new series. Signing and notarization use these repository secrets when present:
+Every push to `main` builds a universal DMG, a Windows zip and a Linux tarball and publishes a GitHub release (`.github/workflows/release.yml`); a push that only changes `docs/` or `.md` files publishes nothing. The version is MAJOR.MINOR from `Cargo.toml` plus an auto-incremented patch (1.0.0, 1.0.1, …); bump `Cargo.toml` to start a new series. Signing and notarization use these repository secrets when present:
 
 | Secret | What |
 |---|---|

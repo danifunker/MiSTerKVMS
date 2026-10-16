@@ -1,14 +1,20 @@
 name: Build & Release
 
 # Every push to main publishes a release. The version is MAJOR.MINOR from
-# Cargo.toml plus an auto-incremented patch (0.9.0, 0.9.1, ...). Bump the
-# version in Cargo.toml to start a new series (e.g. 0.10.0, 1.0.0).
+# Cargo.toml plus an auto-incremented patch (1.0.0, 1.0.1, ...). Bump the
+# version in Cargo.toml to start a new series (e.g. 1.1.0, 2.0.0).
 # Pull requests only build and test. The iPhone app goes to TestFlight only
 # when something it's built from changed (scripts/ios-fingerprint.sh).
+# A push that only changes documentation publishes nothing: no build reads
+# docs/ or any .md file (LICENSE is bundled, so it isn't ignored). Its
+# changes go out with the next release.
 
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   pull_request:
   workflow_dispatch:
     inputs:
