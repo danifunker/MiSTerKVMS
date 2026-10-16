@@ -34,6 +34,8 @@ pub enum VideoSource {
     /// A capture card on this computer: video device id and audio device id
     /// (empty: no audio).
     Local { video: String, audio: String },
+    /// A demo host (crate::demo): the test pattern with MiSTer-Kun on it.
+    Demo,
 }
 
 impl VideoSource {
@@ -41,6 +43,7 @@ impl VideoSource {
         match self {
             VideoSource::Link(link) => link.address().to_string(),
             VideoSource::Local { video, audio } => format!("local '{video}' audio '{audio}'"),
+            VideoSource::Demo => "demo".into(),
         }
     }
 }
@@ -375,13 +378,17 @@ impl VideoSession {
                 l.set_media(Some(Arc::new(sink)));
                 link = Some(l);
             }
-            VideoSource::Local { video, audio } => {
+            VideoSource::Local { .. } | VideoSource::Demo => {
                 shared.counters.lock().unwrap().state = "opening".into();
                 let recv_shared = shared.clone();
+                let (video, audio, logo) = match source {
+                    VideoSource::Local { video, audio } => (video, audio, false),
+                    _ => (kvms_capture::pattern::ID.to_string(), kvms_capture::CARD_AUDIO.to_string(), true),
+                };
                 threads.push(
                     thread::Builder::new()
                         .name("capture-receive".into())
-                        .spawn(move || local::receive_loop(video, audio, recv_shared))
+                        .spawn(move || local::receive_loop(video, audio, logo, recv_shared))
                         .map_err(|e| VideoError::Graphics { message: e.to_string() })?,
                 );
             }

@@ -36,7 +36,8 @@ fn describe(e: &CaptureError) -> String {
     }
 }
 
-pub(super) fn receive_loop(video: String, audio: String, shared: Arc<Shared>) {
+/// `logo`: draw MiSTer-Kun on each frame (demo hosts).
+pub(super) fn receive_loop(video: String, audio: String, logo: bool, shared: Arc<Shared>) {
     let stopped = || shared.stop.load(Ordering::Relaxed);
     let card_audio = is_card_audio(&audio);
     // Card audio is opened with the video and handed to the audio thread.
@@ -70,8 +71,11 @@ pub(super) fn receive_loop(video: String, audio: String, shared: Arc<Shared>) {
         let mut last_frame = Instant::now();
         while !stopped() {
             match cap.next_frame(Duration::from_millis(100)) {
-                Ok(Some(f)) => {
+                Ok(Some(mut f)) => {
                     last_frame = Instant::now();
+                    if logo && f.format == PixelFormat::Bgra {
+                        crate::demo::draw_logo(&mut f.data, f.stride as usize, f.width as usize, f.height as usize);
+                    }
                     if f.format == PixelFormat::Bgra {
                         deliver.video(&shared, &f.data, f.stride, f.width, f.height, f.timestamp);
                     } else if let Err(e) = to_bgra(&f, &mut picture) {

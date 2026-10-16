@@ -10,7 +10,32 @@ struct HostListView: View {
 
     var body: some View {
         List {
-            ForEach(model.profiles) { profile in
+            // The Demo host first, apart from the real MiSTers.
+            ForEach(model.profiles.filter(\.isDemo)) { profile in
+                Button {
+                    model.open(profile)
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(profile.name).font(.headline)
+                            Text(profile.subtitle).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("DEMO")
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(.tint.opacity(0.25)))
+                    }
+                }
+                .tint(.primary)
+                .swipeActions {
+                    Button { model.demoMode = false } label: { Label("Hide", systemImage: "eye.slash") }
+                }
+                .contextMenu {
+                    Button { model.demoMode = false } label: { Label("Hide the demo", systemImage: "eye.slash") }
+                }
+            }
+            ForEach(model.profiles.filter { !$0.isDemo }) { profile in
                 Button {
                     model.open(profile)
                 } label: {
@@ -41,9 +66,10 @@ struct HostListView: View {
                 ContentUnavailableView {
                     Label("No MiSTers yet", systemImage: "display")
                 } description: {
-                    Text("Run MiSTerKVMS Capture on the PC with the capture card, then add its stream here while you're on the same Wi-Fi.")
+                    Text("You need a MiSTer FPGA running mrext Remote, a capture card showing it, and MiSTerKVMS Capture (Windows, Mac or Linux) on the computer the card is plugged into. Then add its stream here while you're on the same Wi-Fi.")
                 } actions: {
                     Button("Add a MiSTer") { adding = true }.buttonStyle(.borderedProminent)
+                    Button("Try it without a MiSTer") { model.demoMode = true }
                 }
             }
         }
@@ -51,12 +77,13 @@ struct HostListView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { appSettings = true } label: { Image(systemName: "gearshape") }
-                    .accessibilityLabel("This iPhone")
+                    .accessibilityLabel("Settings")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { adding = true } label: { Image(systemName: "plus") }
             }
         }
+        .onAppear { model.listShown() }
         .sheet(isPresented: $appSettings) { AppSettingsView() }
         .sheet(isPresented: $adding) { AddHostView() }
         .sheet(item: $settingsFor) { profile in HostSettingsView(hostId: profile.id) }
@@ -75,7 +102,11 @@ extension HostProfile {
         return name.removingPercentEncoding ?? name
     }
 
+    /// The demo host (core: `demo_host_profile`).
+    var isDemo: Bool { source == "demo" }
+
     var subtitle: String {
+        if isDemo { return "Test pattern; your input is listed on screen" }
         if !streamName.isEmpty { return "Stream \(streamName)" }
         if !misterHost.isEmpty { return misterHost }
         return "No stream chosen"

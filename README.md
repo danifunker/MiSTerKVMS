@@ -133,7 +133,7 @@ Without them the release is ad-hoc signed and not notarized. The iPhone app isn'
 
 ## Credits
 
-- **MiSTer-Kun** mascot (in the app icon): original design by HeWhoisRed, a gift to the MiSTer community; remastered artwork from [baxysquare/mister_kun](https://github.com/baxysquare/mister_kun). See [apple/Icon/CREDITS.md](apple/Icon/CREDITS.md).
+- **MiSTer-Kun** mascot (in the app icon and the iPhone app's demo): original design by HeWhoisRed, a gift to the MiSTer community; remastered artwork from [baxysquare/mister_kun](https://github.com/baxysquare/mister_kun). See [apple/Icon/CREDITS.md](apple/Icon/CREDITS.md).
 - [MiSTer FPGA](https://github.com/MiSTer-devel/Main_MiSTer/wiki) and [mrext](https://github.com/wizzomafizzo/mrext).
 
 ## License

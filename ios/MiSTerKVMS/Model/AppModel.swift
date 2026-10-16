@@ -26,6 +26,13 @@ final class AppModel: ObservableObject {
         observer.model = self
         profiles = core.profiles()
         loadKeys()
+        showWelcome = !UserDefaults.standard.bool(forKey: Pref.welcomed)
+        if showWelcome && profiles.contains(where: { !$0.isDemo }) {
+            // Set up before the first-run screen existed.
+            UserDefaults.standard.set(true, forKey: Pref.welcomed)
+            showWelcome = false
+        }
+        syncDemoHost()
         // Other viewers see this name ("iPhone has control"). The core falls
         // back to "MiSTerKVMS" where it can't read a computer name, as on iOS.
         if core.viewerName() == "MiSTerKVMS" {
@@ -86,6 +93,57 @@ final class AppModel: ObservableObject {
         if !profiles.contains(where: { $0.useInternet && core.deviceKeyServer(id: $0.id) == server }) {
             DeviceKeychain.delete(server)
         }
+    }
+
+    // MARK: - Demo (docs/APP-STORE.md S1)
+
+    /// The first-run screen: try the demo, or go on to the MiSTers.
+    @Published private(set) var showWelcome = false
+
+    /// The Demo host is in the list: the test pattern, with the input it
+    /// receives listed on screen instead of sent to a MiSTer.
+    var demoMode: Bool {
+        get { UserDefaults.standard.bool(forKey: Pref.demoMode) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Pref.demoMode)
+            if !newValue, profile?.isDemo == true { close() }
+            syncDemoHost()
+            objectWillChange.send()
+        }
+    }
+
+    var isDemo: Bool { profile?.isDemo == true }
+
+    private var openDemoWhenListed = false
+
+    /// The host list is showing: open the demo if the first-run screen asked.
+    func listShown() {
+        guard openDemoWhenListed else { return }
+        openDemoWhenListed = false
+        if let demo = profiles.first(where: \.isDemo) { open(demo) }
+    }
+
+    /// The first-run screen's answer: `demo` turns demo mode on and opens it.
+    func welcomed(demo: Bool) {
+        UserDefaults.standard.set(true, forKey: Pref.welcomed)
+        showWelcome = false
+        if demo {
+            demoMode = true
+            // Opened by the host list once it has replaced this screen: the
+            // session's full-screen cover doesn't come up during that swap.
+            openDemoWhenListed = true
+        }
+    }
+
+    /// The Demo host saved while demo mode is on, gone while it's off.
+    private func syncDemoHost() {
+        let have = profiles.contains(where: \.isDemo)
+        if demoMode && !have {
+            core.saveProfile(profile: demoHostProfile())
+        } else if !demoMode && have {
+            core.deleteProfile(id: demoHostProfile().id)
+        }
+        profiles = core.profiles()
     }
 
     // MARK: - This iPhone's name

@@ -33,4 +33,8 @@ enum Pref {
     static let buttonOpacity = "quick.opacity"
     /// The quick buttons folded into one small button.
     static let quickCollapsed = "quick.collapsed"
+    /// The Demo host is in the list (docs/APP-STORE.md S1).
+    static let demoMode = "demo.mode"
+    /// The first-run screen has been answered.
+    static let welcomed = "welcome.done"
 }

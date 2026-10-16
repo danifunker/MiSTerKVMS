@@ -13,6 +13,7 @@ use tungstenite::{Message, WebSocket};
 
 use mkvm::InputCmd;
 
+use crate::demo::DemoLog;
 use crate::input::{InputSettings, InputState, KeyResult, MouseButton};
 use crate::link::MkvmLink;
 use crate::keymap::hid;
@@ -73,6 +74,8 @@ pub struct MisterSession {
     rate: Mutex<(Instant, u64, f64)>,
     /// Also told about mouse movement (the video's predictive cursor).
     cursor_sink: Mutex<Option<Arc<dyn CursorSink>>>,
+    /// Demo hosts: where the input goes instead of a MiSTer.
+    demo: Option<Arc<DemoLog>>,
 }
 
 /// Receives the relative mouse movement that's sent to MiSTer.
@@ -99,6 +102,7 @@ impl MisterSession {
             counters,
             rate: Mutex::new((Instant::now(), 0, 0.0)),
             cursor_sink: Mutex::new(None),
+            demo: None,
         })
     }
 
@@ -217,7 +221,30 @@ impl MisterSession {
             counters,
             rate: Mutex::new((Instant::now(), 0, 0.0)),
             cursor_sink: Mutex::new(None),
+            demo: None,
         })
+    }
+
+    /// A demo host's session: no MiSTer; the input it would have sent is
+    /// written to `demo_log` instead (crate::demo).
+    pub(crate) fn demo(observer: Arc<dyn SessionObserver>) -> Arc<Self> {
+        let (tx, rx) = mpsc::channel();
+        let counters = Arc::new(Counters::default());
+        let log = Arc::new(DemoLog::default());
+        let worker = DemoWorker { observer, rx, counters: counters.clone(), log: log.clone() };
+        thread::Builder::new().name("input-demo".into()).spawn(move || worker.run()).expect("spawn session worker");
+        Arc::new(Self {
+            tx,
+            input: Mutex::new(InputState::default()),
+            counters,
+            rate: Mutex::new((Instant::now(), 0, 0.0)),
+            cursor_sink: Mutex::new(None),
+            demo: Some(log),
+        })
+    }
+
+    pub(crate) fn demo_log(&self) -> Option<&Arc<DemoLog>> {
+        self.demo.as_ref()
     }
 
     /// For the capture server, which forwards input it received already
@@ -261,6 +288,36 @@ impl Drop for MisterSession {
 }
 
 type Socket = WebSocket<TcpStream>;
+
+/// A demo host's input: always connected, everything written to the log.
+struct DemoWorker {
+    observer: Arc<dyn SessionObserver>,
+    rx: Receiver<Cmd>,
+    counters: Arc<Counters>,
+    log: Arc<DemoLog>,
+}
+
+impl DemoWorker {
+    fn run(self) {
+        self.counters.connected.store(1, Ordering::Relaxed);
+        self.observer.on_state(ConnectionState::Connected);
+        while let Ok(cmd) = self.rx.recv() {
+            self.counters.queued.fetch_sub(1, Ordering::Relaxed);
+            match cmd {
+                Cmd::Shutdown => break,
+                Cmd::Move(dx, dy) => self.log.moved(dx, dy),
+                Cmd::Send(m) => {
+                    self.log.message(&m);
+                    self.counters.sent.fetch_add(1, Ordering::Relaxed);
+                }
+                // Real time, so a tap's press and release stay apart.
+                Cmd::Delay(d) => thread::sleep(d),
+            }
+        }
+        self.counters.connected.store(0, Ordering::Relaxed);
+        self.observer.on_state(ConnectionState::Disconnected { reason: "closed".into() });
+    }
+}
 
 /// Sends input over a capture server link, batched: mouse movement every
 /// `MOUSE_FLUSH`, everything else at once and in order.

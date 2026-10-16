@@ -25,8 +25,14 @@ struct RootView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        NavigationStack {
-            HostListView()
+        Group {
+            if model.showWelcome {
+                WelcomeView()
+            } else {
+                NavigationStack {
+                    HostListView()
+                }
+            }
         }
         .fullScreenCover(isPresented: Binding(
             get: { model.state.profileId != nil },

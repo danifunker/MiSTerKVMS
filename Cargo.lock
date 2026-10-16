@@ -1734,6 +1734,7 @@ dependencies = [
  "kvms-codec",
  "mdns-sd",
  "mkvm",
+ "png",
  "pollster",
  "raw-window-handle",
  "serde",

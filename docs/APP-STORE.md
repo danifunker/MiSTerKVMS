@@ -4,18 +4,19 @@ Plan for taking the iPhone app from TestFlight to a free App Store app.
 Everything not needed for that is in [BACKLOG.md](BACKLOG.md).
 
 Status: TestFlight builds go out from CI (IPHONE.md §6.1); export compliance
-is declared (exempt). Nothing below is done yet.
+is declared (exempt). S1 and S6 are done (demo mode, first-run screen,
+credits in Settings → About); the rest is to do.
 
 ## 1. What review needs that we don't have yet
 
 | # | Item | Who | Notes |
 |---|---|---|---|
-| S1 | **A way for review to try the app** | code | Reviewers have no MiSTer or capture PC, and pairing only works on the home network, so a public demo server can't work. Add a **Demo** host in the app: the built-in test pattern (`capture/src/pattern.rs`, rainbow bars and a beep) through the same video, sound, touchpad and keyboard paths, with the input shown on screen instead of sent. Also gives the App Store screenshots something to show. |
+| S1 | **A way for review to try the app** (done) | code | Reviewers have no MiSTer or capture PC, and pairing only works on the home network, so a public demo server can't work. **Demo mode** (first-run screen: "Try it without a MiSTer"; Settings → Demo mode) adds a Demo host: the built-in test pattern (`capture/src/pattern.rs`, rainbow bars and a beep) with MiSTer-Kun drawn on it, through the same video, sound, touchpad and keyboard paths. The core writes the input a MiSTer would have received as lines over the picture ("Shift+Tab", "double click", "mouse moved +120, −40"), each gone after 5 s (`core/src/demo.rs`). Also gives the App Store screenshots something to show. |
 | S2 | **Demo video** | you | Apple usually asks for one for apps that need hardware: 1–2 minutes on a real iPhone: add a MiSTer, the picture and sound, the touchpad, typing, the remote, switching MiSTers, internet pairing. An unlisted YouTube link in the review notes. |
 | S3 | **Privacy policy** | code + you | Required for every app. Draft in `docs/PRIVACY.md` (the app collects nothing; what it sends goes only to the user's own capture PC: the phone's name, input, its key). Its GitHub URL works as the policy URL. |
 | S4 | **iPad check** | code | An iPhone-only app (`TARGETED_DEVICE_FAMILY = 1`) still runs on iPad in compatibility mode, and review often tests there. Check the session screen, keyboard and remote in the iPad simulator. |
 | S5 | **IPv6-only check** | code | Review's network is IPv6-only (NAT64). The demo needs no network; connecting by name must not assume IPv4. Check typed addresses and names resolve to IPv6, and the error when nothing answers is clear. |
-| S6 | **First-run pass** | code | No dead ends without hardware: an empty host list explains what's needed (mrext, a capture PC, a card) and offers the demo; errors name the next step. Remove anything marked experimental that isn't ready, or label it. |
+| S6 | **First-run pass** (done) | code | A first-run screen (only on a phone with no MiSTers saved) says what's needed and offers the demo; the empty host list says the same and offers it too. Settings → About has the version and the credits (MiSTer-Kun, MiSTer, mrext), as in the desktop apps. |
 
 ## 2. App Store Connect (you; ~1 hour once S1–S3 exist)
 
@@ -37,7 +38,11 @@ is declared (exempt). Nothing below is done yet.
    issues), copyright, the build.
 7. **App Review Information**: your contact; sign-in not required; notes:
    what the app is for, that it needs a MiSTer FPGA with mrext and a capture
-   PC, how to try the Demo host, the video link (S2).
+   PC, the video link (S2), and how to try it without them: *on first launch
+   tap "Try it without a MiSTer" (or Settings → Demo mode, then Demo in the
+   list). It shows a test pattern with sound; tapping, dragging, typing and
+   the on-screen remote are listed on screen as what the MiSTer would
+   receive.*
 8. **Release**: manual after approval, so you choose the day.
 
 ## 3. Listing text (draft)
@@ -67,7 +72,7 @@ is declared (exempt). Nothing below is done yet.
 
 ## 4. Order
 
-1. S1 demo host, S4–S6 checks (one branch; TestFlight build to try).
+1. ~~S1 demo host, S6~~ (done); S4–S5 checks.
 2. S3 privacy policy page; S2 video (you, with the TestFlight build).
 3. Screenshots from the demo host in the simulator.
 4. App Store Connect (§2), submit, answer review.

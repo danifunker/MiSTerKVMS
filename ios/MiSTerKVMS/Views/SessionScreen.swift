@@ -56,6 +56,9 @@ struct SessionScreen: View {
                         HStack { banner; Spacer() }
                     }
                     if showStats { stats }
+                    if model.isDemo {
+                        HStack { DemoInputList(); Spacer() }
+                    }
                     Spacer()
                 }
                 .padding(.horizontal, 12)

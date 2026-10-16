@@ -374,6 +374,11 @@ impl Controller {
                 }
             } else if profile.source_kind() == SourceKind::Capture {
                 self.inner.connect_capture(&mut s, &profile, viewer, observer);
+            } else if profile.source_kind() == SourceKind::Demo {
+                let session = MisterSession::demo(observer);
+                session.set_settings(profile.input_settings());
+                s.session = Some(session);
+                s.capture_on_connect = true;
             } else if profile.mister_host.is_empty() {
                 s.connection = ConnectionState::Disconnected { reason: "no MiSTer address set".into() };
             } else {
@@ -431,6 +436,14 @@ impl Controller {
             recording_error: s.recording_error.clone(),
             stream: s.stream.clone(),
         }
+    }
+
+    /// A demo host's input, as the lines to show over the picture (oldest
+    /// first; each stays 5 s). Empty for other hosts. Poll it a few times a
+    /// second while a demo host is open.
+    pub fn demo_input(&self) -> Vec<String> {
+        let s = self.inner.state.lock().unwrap();
+        s.session.as_ref().and_then(|session| session.demo_log()).map(|log| log.lines()).unwrap_or_default()
     }
 
     /// Capture server hosts: take control of the MiSTer from whoever has it.
@@ -1032,6 +1045,7 @@ impl Inner {
             SourceKind::Local if !profile.local_video.is_empty() => {
                 VideoSource::Local { video: profile.local_video.clone(), audio: profile.local_audio.clone() }
             }
+            SourceKind::Demo => VideoSource::Demo,
             _ => return,
         };
         let frames = s.frames.clone();
@@ -1455,6 +1469,43 @@ mod tests {
             ConnectionState::Disconnected { reason: "no MiSTer address set".into() }
         );
         assert_eq!(c.key_event(0x04, true), KeyResult::Ignored);
+    }
+
+    /// A demo host: connected at once, its input written out, not sent.
+    #[test]
+    fn demo_host_logs_input() {
+        let (c, _events) = controller();
+        let p = crate::profiles::demo_host_profile();
+        c.save_profile(p.clone());
+        c.open(p.id);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while c.state().connection != ConnectionState::Connected && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(c.state().connection, ConnectionState::Connected);
+        c.tap_key(0x45);
+        c.click(MouseButton::Left);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        // The click's release comes 40 ms after its press.
+        while c.demo_input() != ["F12", "left click"] && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(c.demo_input(), ["F12", "left click"]);
+        // Tap and drag, as the iPhone's touchpad sends it (not so soon that
+        // its click makes a double click with the one before).
+        thread::sleep(Duration::from_millis(600));
+        c.click(MouseButton::Left);
+        c.mouse_button(MouseButton::Left, true);
+        c.mouse_move(30.0, 10.0);
+        c.mouse_button(MouseButton::Left, false);
+        let want = ["F12", "left click", "left click", "left button down", "mouse moved +30, +10", "left button up"];
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while c.demo_input() != want && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(c.demo_input(), want);
+        c.close();
+        assert!(c.demo_input().is_empty());
     }
 
     /// A capture server stream end to end against a fake server: connect,

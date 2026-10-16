@@ -22,8 +22,9 @@ use crate::video::{DisplaySettings, ScaleMode};
 pub struct HostProfile {
     pub id: String,
     pub name: String,
-    /// Where video comes from: "capture" (a capture server stream) or
-    /// "local" (a capture card on this computer). Empty: "local" if
+    /// Where video comes from: "capture" (a capture server stream),
+    /// "local" (a capture card on this computer) or "demo" (the test
+    /// pattern, input written out instead of sent: crate::demo). Empty: "local" if
     /// `local_video` is set, else "capture". Hosts saved with "ndi" (removed)
     /// are capture hosts; opening one finds its MiSTer's stream.
     pub source: String,
@@ -107,6 +108,7 @@ impl Default for HostProfile {
 pub enum SourceKind {
     Capture,
     Local,
+    Demo,
 }
 
 impl HostProfile {
@@ -114,6 +116,7 @@ impl HostProfile {
         match self.source.as_str() {
             "capture" => SourceKind::Capture,
             "local" => SourceKind::Local,
+            "demo" => SourceKind::Demo,
             // Including "ndi" (removed): the MiSTer's stream replaces it.
             _ if !self.stream.trim().is_empty() => SourceKind::Capture,
             _ if !self.local_video.is_empty() => SourceKind::Local,
@@ -184,6 +187,23 @@ impl HostProfile {
 #[uniffi::export]
 pub fn new_host_profile() -> HostProfile {
     HostProfile::default()
+}
+
+/// The demo host's id: there's at most one.
+pub const DEMO_HOST_ID: &str = "demo";
+
+/// The demo host (crate::demo): the test pattern, no MiSTer needed.
+#[uniffi::export]
+pub fn demo_host_profile() -> HostProfile {
+    HostProfile {
+        id: DEMO_HOST_ID.into(),
+        name: "Demo".into(),
+        source: "demo".into(),
+        // Nothing to learn from: the pattern has no pointer of its own.
+        predictive_cursor: false,
+        auto_crop: false,
+        ..Default::default()
+    }
 }
 
 /// Everything in the settings file.
