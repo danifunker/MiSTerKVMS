@@ -156,6 +156,8 @@ struct State {
     stats_visible: bool,
     stats_hide_at: Instant,
     stats_signature: String,
+    /// AppData::stats_on_change, kept here for the tick.
+    stats_on_change: bool,
     input_stats: Option<InputStats>,
     video_stats: Option<VideoStats>,
     video_error: Option<String>,
@@ -190,6 +192,7 @@ impl Default for State {
             stats_visible: false,
             stats_hide_at: Instant::now(),
             stats_signature: String::new(),
+            stats_on_change: false,
             input_stats: None,
             video_stats: None,
             video_error: None,
@@ -842,6 +845,16 @@ impl Controller {
         self.inner.store.change(|d| d.capture_intro_seen = true);
     }
 
+    /// Show the stats for a few seconds when the connection changes.
+    pub fn stats_on_change(&self) -> bool {
+        self.inner.store.data().stats_on_change
+    }
+
+    pub fn set_stats_on_change(&self, on: bool) {
+        self.inner.store.change(|d| d.stats_on_change = on);
+        self.inner.state.lock().unwrap().stats_on_change = on;
+    }
+
     pub fn set_stats_pinned(&self, pinned: bool) {
         self.inner.store.change(|d| d.stats_pinned = pinned);
         if !pinned {
@@ -940,11 +953,12 @@ impl Controller {
     }
 
     fn with_store(store: ProfileStore, observer: Arc<dyn ControllerObserver>) -> Arc<Self> {
+        let state = State { stats_on_change: store.data().stats_on_change, ..Default::default() };
         let inner = Arc::new_cyclic(|me| Inner {
             me: me.clone(),
             observer,
             store,
-            state: Mutex::new(State::default()),
+            state: Mutex::new(state),
             device_keys: Mutex::new(HashMap::new()),
             #[cfg(windows)]
             win_capture: Mutex::new(None),
@@ -987,8 +1001,10 @@ impl State {
         self.stats_hide_at = Instant::now() + STATS_FLASH;
     }
 
-    /// Re-show the overlay when anything worth noticing changes. Audio
-    /// underruns are left out: they also count while nothing is playing.
+    /// Re-show the overlay, if wanted, when the connection changes in a way
+    /// worth noticing: connected or not, the core, the video's state and
+    /// size. Not dropped frames, the auto-crop or audio underruns: they
+    /// change all the time while a stream settles.
     fn check_signature(&mut self) {
         let connected = match self.connection {
             ConnectionState::Connected => "up",
@@ -1000,14 +1016,14 @@ impl State {
             parts.extend([
                 v.state.clone(),
                 format!("{}x{}", v.source_width, v.source_height),
-                format!("{}x{}", v.crop_width, v.crop_height),
-                v.dropped_frames.to_string(),
             ]);
         }
         let signature = parts.join("|");
         if signature != self.stats_signature {
             self.stats_signature = signature;
-            self.flash();
+            if self.stats_on_change {
+                self.flash();
+            }
         }
     }
 }

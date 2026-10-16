@@ -28,6 +28,9 @@ final class SessionController: ObservableObject {
     let capture = InputCapture()
     private var recorder: Recorder?
     private(set) weak var captureView: NSView?
+    /// Every video view that's in a window, so the video can move to another
+    /// if the one it's drawn into goes away.
+    private let surfaces = NSHashTable<NSView>.weakObjects()
 
     init() {
         let observer = Observer()
@@ -71,6 +74,18 @@ final class SessionController: ObservableObject {
         get { state.statsPinned }
         set { core.setStatsPinned(pinned: newValue) }
     }
+
+    /// Show the stats for a few seconds when the connection changes.
+    var statsOnChange: Bool {
+        get { core.statsOnChange() }
+        set {
+            core.setStatsOnChange(on: newValue)
+            objectWillChange.send()
+        }
+    }
+
+    /// A demo host's input, as lines for the picture (core/src/demo.rs).
+    func demoInput() -> [String] { core.demoInput() }
 
     var isConnected: Bool {
         if case .connected = state.connection { return true }
@@ -137,6 +152,7 @@ final class SessionController: ObservableObject {
 
     /// Called by the video view once it's in a window (and again if it's recreated).
     func attach(view: NSView) {
+        surfaces.add(view)
         guard view !== captureView else { return }
         if captureView != nil { core.detachSurface() }
         removeVideoLayers()
@@ -149,11 +165,16 @@ final class SessionController: ObservableObject {
 
     /// The video view is leaving its window: the core must let go of it.
     func detach(view: NSView) {
+        surfaces.remove(view)
         guard view === captureView else { return }
         capture.stop()
         core.detachSurface()
         removeVideoLayers()
         captureView = nil
+        // Another view still on screen takes over the video.
+        if let other = surfaces.allObjects.first(where: { $0.window != nil }) {
+            attach(view: other)
+        }
     }
 
     func viewResized(_ view: NSView) {

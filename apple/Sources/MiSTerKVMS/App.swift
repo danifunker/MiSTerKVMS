@@ -16,7 +16,11 @@ struct MiSTerKVMSApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("MiSTerKVMS") {
+        // One window: there's one session (one controller, one video view).
+        // Several windows fought over the video, and closing one left the
+        // others without it. Closing it disconnects; the Dock icon or the
+        // Window menu brings it back.
+        Window("MiSTerKVMS", id: "main") {
             ContentView()
                 .environmentObject(profiles)
                 .environmentObject(controller)
@@ -25,6 +29,10 @@ struct MiSTerKVMSApp: App {
         .commands {
             CommandGroup(replacing: .appInfo) { AboutCommand() }
             CommandMenu("Session") {
+                Button("Disconnect") { controller.close() }
+                    .keyboardShortcut("d", modifiers: [.command, .shift])
+                    .disabled(controller.profile == nil)
+                Divider()
                 Button("Capture Input") { controller.startCapture() }
                     .keyboardShortcut("k", modifiers: [.command, .shift])
                     .disabled(!controller.isConnected)

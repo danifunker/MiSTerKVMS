@@ -17,7 +17,9 @@ struct ContentView: View {
                     HostRow(profile: profile, isLive: controller.profile?.id == profile.id)
                         .tag(profile.id)
                         .contextMenu {
-                            Button("Edit…") { editing = profile }
+                            if !profile.isDemo {
+                                Button("Edit…") { editing = profile }
+                            }
                             Button("Delete", role: .destructive) { delete(profile.id) }
                         }
                 }
@@ -25,7 +27,15 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
             .toolbar {
                 ToolbarItem {
-                    Button { editing = HostProfile.make() } label: { Label("Add Host", systemImage: "plus") }
+                    Menu {
+                        Button("Add Host…") { editing = HostProfile.make() }
+                        Button("Add Demo Host") { addDemo() }
+                    } label: {
+                        Label("Add Host", systemImage: "plus")
+                    } primaryAction: {
+                        editing = HostProfile.make()
+                    }
+                    .help("Add a host (hold for the demo host)")
                 }
             }
             .overlay {
@@ -36,6 +46,7 @@ struct ContentView: View {
                         Text("Add a MiSTer: a stream from MiSTerKVMS Capture, or a capture card on this Mac.")
                     } actions: {
                         Button("Add Host…") { editing = HostProfile.make() }
+                        Button("Try Without a MiSTer") { addDemo() }
                     }
                 }
             }
@@ -60,6 +71,13 @@ struct ContentView: View {
                 controller.save(saved)
             }
         }
+        // Disconnected (toolbar, Session menu): nothing selected, so clicking
+        // the host connects again.
+        .onChange(of: controller.profile?.id) { _, id in
+            if id == nil { selection = nil }
+        }
+        // Closing the window ends the session (sound, input); the app stays.
+        .onDisappear { controller.close() }
         .onChange(of: selection) { _, id in
             if let id, let profile = profiles.profiles.first(where: { $0.id == id }) {
                 controller.open(profile)
@@ -67,6 +85,17 @@ struct ContentView: View {
                 controller.close()
             }
         }
+    }
+
+    /// The demo host (core: demo_host_profile): the test pattern, input
+    /// listed on the picture. For trying the app, and App Review.
+    private func addDemo() {
+        let demo = demoHostProfile()
+        if !profiles.profiles.contains(where: { $0.id == demo.id }) {
+            profiles.upsert(demo)
+            profiles.reload()
+        }
+        selection = demo.id
     }
 
     private func delete(_ id: HostProfile.ID) {

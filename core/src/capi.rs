@@ -233,6 +233,11 @@ fn call(c: &Arc<Controller>, r: Value) -> Result<Value, String> {
             done
         }
         "captureIntroSeen" => Ok(json!(c.capture_intro_seen())),
+        "statsOnChange" => Ok(json!(c.stats_on_change())),
+        "setStatsOnChange" => {
+            c.set_stats_on_change(arg(&r, "on")?);
+            done
+        }
         "setCaptureIntroSeen" => {
             c.set_capture_intro_seen();
             done

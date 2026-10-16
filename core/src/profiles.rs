@@ -222,6 +222,10 @@ pub struct AppData {
     /// The person has seen, once, how to get the keyboard and mouse back
     /// from capture (the shells ask before the first capture).
     pub capture_intro_seen: bool,
+    /// Show the stats overlay for a few seconds when the connection
+    /// changes (connects, drops, new core or resolution). Off: only on
+    /// request or pinned.
+    pub stats_on_change: bool,
 }
 
 /// The settings file. Every change is written straight away.

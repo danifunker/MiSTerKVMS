@@ -32,6 +32,9 @@ struct SessionView: View {
                 if showCaptureHint {
                     CaptureHint(mode: controller.captureMode).allowsHitTesting(false)
                 }
+                if profile.isDemo {
+                    HStack { DemoInputList(); Spacer() }
+                }
                 Spacer()
                 HStack {
                     // Clickable (pin button); the empty space around it still
@@ -87,6 +90,10 @@ struct SessionView: View {
                 }
 
                 Button(action: onEdit) { Label("Edit Host", systemImage: "slider.horizontal.3") }
+                    .disabled(profile.isDemo)
+
+                Button { controller.close() } label: { Label("Disconnect", systemImage: "eject") }
+                    .help("Disconnect from this MiSTer; the app stays open (⇧⌘D)")
             }
             ToolbarItemGroup {
                 Picker("Scale", selection: Binding(
@@ -181,6 +188,7 @@ private struct VideoPlaceholder: View {
     private var title: String {
         switch profile.sourceKind {
         case "local": "Capture card on this Mac"
+        case "demo": "Demo"
         default:
             if !profile.streamName.isEmpty { profile.streamName }
             else if !profile.misterHost.isEmpty { profile.misterHost }
@@ -191,6 +199,8 @@ private struct VideoPlaceholder: View {
     private var detail: String? {
         let state = controller.videoStats?.state
         switch profile.sourceKind {
+        case "demo":
+            return controller.videoError ?? "Starting the test pattern…"
         case "local":
             if let error = controller.videoError { return error }
             switch state {
