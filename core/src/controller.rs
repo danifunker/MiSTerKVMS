@@ -751,11 +751,12 @@ impl Controller {
     }
 
     /// Type text as key presses on a US layout (a touch keyboard sends
-    /// characters, not keys), each with `modifiers` held. Characters with no
-    /// US key are skipped.
+    /// characters, not keys; the apps' Type Text box), each with `modifiers`
+    /// held, a short gap after each. Characters with no US key are skipped;
+    /// `text_typing` says what will happen first.
     pub fn type_text(&self, text: String, modifiers: Vec<u16>) {
         let Some(s) = self.input_session() else { return };
-        for c in text.chars() {
+        for c in crate::text::normalize(&text).chars() {
             let Some((usage, shift)) = crate::text::key_for_char(c) else { continue };
             let mut keys = modifiers.clone();
             if shift && !keys.contains(&crate::text::LEFT_SHIFT) {
@@ -763,6 +764,30 @@ impl Controller {
             }
             keys.push(usage);
             s.press_combo(keys);
+            s.delay(crate::text::TYPE_GAP_MS);
+        }
+    }
+
+    /// The Type Text box: type `text` at `keys_per_sec` (remembered for the
+    /// open host, as its `type_speed`). `text_typing` says what will happen.
+    pub fn type_text_at(&self, text: String, keys_per_sec: f64) {
+        let Some(s) = self.input_session() else { return };
+        let (hold, gap) = crate::text::pace(keys_per_sec);
+        for c in crate::text::normalize(&text).chars() {
+            let Some((usage, shift)) = crate::text::key_for_char(c) else { continue };
+            let mut keys = if shift { vec![crate::text::LEFT_SHIFT] } else { Vec::new() };
+            keys.push(usage);
+            s.press_combo_held(keys, Duration::from_millis(hold as u64));
+            s.delay(gap);
+        }
+        let id = self.open_profile_id();
+        if let Some(id) = id {
+            let speed = keys_per_sec.clamp(crate::text::MIN_TYPE_SPEED, crate::text::MAX_TYPE_SPEED);
+            self.inner.store.update(&id, |p| p.type_speed = speed);
+            if let Some(p) = self.inner.state.lock().unwrap().profile.as_mut() {
+                p.type_speed = speed;
+            }
+            self.inner.notify(ControllerEvent::ProfilesChanged);
         }
     }
 
@@ -1541,6 +1566,16 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
         assert_eq!(c.demo_input(), want);
+        // The Type Text box: key by key, at the speed asked, remembered.
+        thread::sleep(Duration::from_millis(600));
+        c.type_text_at("Hi \u{201C}x\u{201D}".into(), 40.0);
+        let want = ["Shift+H", "I", "Space", "Shift+'", "X", "Shift+'"];
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !c.demo_input().ends_with(&want.map(String::from)) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(c.demo_input().ends_with(&want.map(String::from)), "{:?}", c.demo_input());
+        assert_eq!(c.profiles().iter().find(|p| p.id == crate::profiles::DEMO_HOST_ID).unwrap().type_speed, 40.0);
         c.close();
         assert!(c.demo_input().is_empty());
     }

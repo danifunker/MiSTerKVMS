@@ -115,6 +115,9 @@
                     <AppBarButton Label="Send Ctrl+Alt+Del" Click="CtrlAltDel_Click">
                         <AppBarButton.Icon><FontIcon Glyph="&#xE72E;" /></AppBarButton.Icon>
                     </AppBarButton>
+                    <AppBarButton Label="Type text… (Ctrl+Shift+V)" Click="TypeText_Click">
+                        <AppBarButton.Icon><FontIcon Glyph="&#xE765;" /></AppBarButton.Icon>
+                    </AppBarButton>
                     <AppBarButton x:Name="QualityButton" Label="Quality">
                         <AppBarButton.Icon><FontIcon Glyph="&#xE9E9;" /></AppBarButton.Icon>
                         <AppBarButton.Flyout>

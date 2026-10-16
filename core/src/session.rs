@@ -129,19 +129,29 @@ impl MisterSession {
     /// Press keys together and release them in reverse, e.g. Ctrl+Alt+Del
     /// (which Windows never lets an app capture).
     pub fn press_combo(&self, hid_usages: Vec<u16>) {
+        self.press_combo_held(hid_usages, TAP_HOLD);
+    }
+}
+
+impl MisterSession {
+    /// `press_combo`, holding the keys for `hold` (typing at a set speed).
+    pub(crate) fn press_combo_held(&self, hid_usages: Vec<u16>, hold: Duration) {
         let mut out = Vec::new();
         let mut input = self.input.lock().unwrap();
         for &usage in &hid_usages {
             input.key_event(usage, true, &mut out);
         }
         self.send_all(std::mem::take(&mut out));
-        self.push(Cmd::Delay(TAP_HOLD));
+        self.push(Cmd::Delay(hold));
         for &usage in hid_usages.iter().rev() {
             input.key_event(usage, false, &mut out);
         }
         self.send_all(out);
     }
+}
 
+#[uniffi::export]
+impl MisterSession {
     /// Press the MiSTer menu (OSD) key.
     pub fn open_menu(&self) {
         self.tap_key(hid::F12);

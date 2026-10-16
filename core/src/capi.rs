@@ -233,6 +233,15 @@ fn call(c: &Arc<Controller>, r: Value) -> Result<Value, String> {
             done
         }
         "captureIntroSeen" => Ok(json!(c.capture_intro_seen())),
+        "typeText" => {
+            c.type_text_at(arg(&r, "text")?, arg(&r, "keysPerSec")?);
+            done
+        }
+        "textTyping" => {
+            let t = crate::text::text_typing(arg(&r, "text")?, arg(&r, "keysPerSec")?);
+            Ok(json!({ "keys": t.keys, "skipped": t.skipped, "seconds": t.seconds }))
+        }
+        "typeSpeedRange" => Ok(json!(crate::text::type_speed_range())),
         "statsOnChange" => Ok(json!(c.stats_on_change())),
         "setStatsOnChange" => {
             c.set_stats_on_change(arg(&r, "on")?);

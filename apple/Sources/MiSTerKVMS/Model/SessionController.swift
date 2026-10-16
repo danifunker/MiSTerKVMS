@@ -87,6 +87,19 @@ final class SessionController: ObservableObject {
     /// A demo host's input, as lines for the picture (core/src/demo.rs).
     func demoInput() -> [String] { core.demoInput() }
 
+    // MARK: - Type Text (Session ▸ Type Text…)
+
+    /// The Type Text box is open.
+    @Published var typingText = false
+
+    /// Typing reaches the MiSTer: connected, nobody else in control.
+    var canType: Bool { isConnected && !someoneElseInControl }
+
+    /// Type `text` key by key at `keysPerSec` (remembered for the host).
+    func typeText(_ text: String, keysPerSec: Double) {
+        core.typeTextAt(text: text, keysPerSec: keysPerSec)
+    }
+
     var isConnected: Bool {
         if case .connected = state.connection { return true }
         return false

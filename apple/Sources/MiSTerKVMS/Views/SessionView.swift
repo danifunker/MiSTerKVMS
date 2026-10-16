@@ -55,6 +55,7 @@ struct SessionView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { StatusBar() }
+        .sheet(isPresented: $controller.typingText) { TypeTextView() }
         .alert("Your keyboard and mouse are about to go to the MiSTer", isPresented: $controller.askCaptureIntro) {
             Button("Capture") { controller.captureIntroAnswered(capture: true) }
                 .keyboardShortcut(.defaultAction)
@@ -88,6 +89,10 @@ struct SessionView: View {
                           : "Send keyboard and mouse to MiSTer (or click the screen)")
                     .disabled(!controller.isConnected || controller.someoneElseInControl)
                 }
+
+                Button { controller.typingText = true } label: { Label("Type Text", systemImage: "keyboard") }
+                    .help("Type pasted text on the MiSTer, key by key (⇧⌘V)")
+                    .disabled(!controller.isConnected)
 
                 Button(action: onEdit) { Label("Edit Host", systemImage: "slider.horizontal.3") }
                     .disabled(profile.isDemo)

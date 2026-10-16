@@ -373,6 +373,13 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// The Type Text box: `text` typed key by key at `keysPerSec`
+    /// (remembered for the host by the core).
+    func typeText(_ text: String, keysPerSec: Double) {
+        guard ready() else { return }
+        core.typeTextAt(text: text, keysPerSec: keysPerSec)
+    }
+
     func move(dx: Double, dy: Double) {
         guard ready() else { return }
         core.mouseMove(dx: dx, dy: dy)

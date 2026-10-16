@@ -171,6 +171,7 @@ impl Ui {
         let main_menu = gio::Menu::new();
         let session_section = gio::Menu::new();
         session_section.append(Some("Send Ctrl+Alt+Del"), Some("win.ctrl-alt-del"));
+        session_section.append(Some("Type Text…"), Some("win.type-text"));
         session_section.append(Some("Edit Host…"), Some("win.edit-host"));
         session_section.append(Some("Show Last Recording"), Some("win.show-recording"));
         main_menu.append_section(None, &session_section);
@@ -526,6 +527,7 @@ impl Ui {
         });
         simple("mister-menu", |ui| ui.core.open_menu());
         simple("ctrl-alt-del", |ui| ui.core.send_ctrl_alt_del());
+        simple("type-text", |ui| ui.type_text());
         simple("capture", |ui| {
             if ui.capture.borrow().is_active() {
                 ui.stop_capture();
@@ -582,6 +584,7 @@ impl Ui {
         let app = self.window.application().expect("application");
         for (action, accels) in [
             ("win.capture", &["<Control><Shift>k"][..]),
+            ("win.type-text", &["<Control><Shift>v"]),
             ("win.show-stats", &["<Control>i"]),
             ("win.pin-stats", &["<Control><Shift>i"]),
             ("win.record", &["<Control><Shift>r"]),
@@ -893,6 +896,97 @@ impl Ui {
         let note = self.capture.borrow_mut().start(self.video.upcast_ref(), session, raw);
         self.core.set_capturing(true);
         self.show_hint(note);
+    }
+
+    /// Type text (the clipboard, to start with) on the MiSTer key by key, as
+    /// on a US keyboard, at a speed the core copes with (remembered for the
+    /// host: kvms_core::text).
+    fn type_text(self: &Rc<Self>) {
+        if !self.core.is_connected() {
+            return;
+        }
+        let range = kvms_core::text::type_speed_range();
+        let saved = self.open_profile().map(|p| p.type_speed).unwrap_or(0.0);
+        let buffer = gtk::TextBuffer::new(None::<&gtk::TextTagTable>);
+        let view = gtk::TextView::with_buffer(&buffer);
+        view.set_monospace(true);
+        view.set_wrap_mode(gtk::WrapMode::WordChar);
+        let scroll = gtk::ScrolledWindow::builder().min_content_height(160).min_content_width(420).child(&view).build();
+        let scale = gtk::Scale::with_range(gtk::Orientation::Horizontal, range[0], range[1], 1.0);
+        scale.set_value(if saved > 0.0 { saved } else { range[2] });
+        scale.set_digits(0);
+        scale.set_draw_value(true);
+        scale.set_hexpand(true);
+        let speed = gtk::Label::new(Some("Speed (keys per second): slow it down if letters go missing"));
+        speed.set_xalign(0.0);
+        let summary = gtk::Label::new(None);
+        summary.set_wrap(true);
+        summary.set_xalign(0.0);
+        summary.add_css_class("dim-label");
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        content.append(&scroll);
+        content.append(&speed);
+        content.append(&scale);
+        content.append(&summary);
+
+        let dialog = adw::AlertDialog::new(
+            Some("Type text on the MiSTer"),
+            Some("Typed key by key, as on a US keyboard (the MiSTer has no clipboard)."),
+        );
+        dialog.set_extra_child(Some(&content));
+        dialog.add_responses(&[("cancel", "Cancel"), ("type", "Type")]);
+        dialog.set_response_appearance("type", adw::ResponseAppearance::Suggested);
+        dialog.set_close_response("cancel");
+
+        let text_of = |b: &gtk::TextBuffer| b.text(&b.start_iter(), &b.end_iter(), false).to_string();
+        let update: Rc<dyn Fn()> = Rc::new({
+            let (buffer, scale, summary, dialog) = (buffer.clone(), scale.clone(), summary.clone(), dialog.clone());
+            move || {
+                let Some(ui) = ui() else { return };
+                let speed = scale.value().round();
+                let p = kvms_core::text::text_typing(text_of(&buffer), speed);
+                let st = ui.core.state();
+                let other = st.stream.as_ref().is_some_and(|s| !s.have_control && !s.holder.is_empty());
+                let can_type = ui.core.is_connected() && !other;
+                let time = if p.seconds < 60.0 { format!("{} s", p.seconds.ceil()) } else { format!("{} min", (p.seconds / 60.0).ceil()) };
+                let text = if !can_type {
+                    "Someone else has control of this MiSTer: take control first.".to_string()
+                } else if p.keys == 0 {
+                    "Nothing to type.".to_string()
+                } else if p.skipped > 0 {
+                    format!("{} keys, about {time} · {} character(s) can't be typed on a US keyboard and will be skipped", p.keys, p.skipped)
+                } else {
+                    format!("{} keys, about {time}", p.keys)
+                };
+                summary.set_text(&text);
+                dialog.set_response_enabled("type", can_type && p.keys > 0);
+            }
+        });
+        buffer.connect_changed({
+            let update = update.clone();
+            move |_| update()
+        });
+        scale.connect_value_changed({
+            let update = update.clone();
+            move |_| update()
+        });
+        update();
+        self.window.clipboard().read_text_async(None::<&gio::Cancellable>, {
+            let buffer = buffer.clone();
+            move |result| {
+                if let Ok(Some(text)) = result {
+                    buffer.set_text(&text);
+                }
+            }
+        });
+        dialog.connect_response(None, move |_, response| {
+            if response == "type" {
+                if let Some(ui) = ui() {
+                    ui.core.type_text_at(text_of(&buffer), scale.value().round());
+                }
+            }
+        });
+        dialog.present(Some(&self.window));
     }
 
     /// Before the very first capture: how to get the keyboard and mouse

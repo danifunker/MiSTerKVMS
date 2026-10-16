@@ -38,6 +38,9 @@ struct MiSTerKVMSApp: App {
                     .disabled(!controller.isConnected)
                 Button("Send MiSTer Menu (F12)") { controller.openMisterMenu() }
                     .disabled(!controller.isConnected)
+                Button("Type Text…") { controller.typingText = true }
+                    .keyboardShortcut("v", modifiers: [.command, .shift])
+                    .disabled(!controller.isConnected)
                 Button(controller.isRecording ? "Stop Recording" : "Start Recording") { controller.toggleRecording() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(!controller.isRecording && controller.videoStats?.state != "connected")

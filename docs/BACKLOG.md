@@ -12,7 +12,6 @@ The mrext wish list is in [PLANNING.md](PLANNING.md) §7 (we don't change mrext)
 - **Game controller**: needs a virtual gamepad in mrext first.
 - **iPad layout, landscape** (the iPhone app runs on iPad in compatibility
   mode until then).
-- **Paste box**: type a pasted text into the MiSTer.
 - **Pairing by QR code** from outside the home network (shown on the setup
   page).
 

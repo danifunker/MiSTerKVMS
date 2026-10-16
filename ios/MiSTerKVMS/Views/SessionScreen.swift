@@ -262,6 +262,8 @@ struct ControlsMenu: View {
                     }
                 }
                 Section {
+                    NavigationLink("Type text…") { TypeTextScreen(done: { dismiss() }) }
+                        .disabled(!model.isConnected)
                     Button("Reset zoom") { model.resetZoom() }
                     if model.someoneElseInControl {
                         Button("Take control") { model.takeControl(); dismiss() }

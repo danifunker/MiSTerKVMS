@@ -478,6 +478,84 @@ public sealed partial class MainWindow : Window
 
     private void CtrlAltDel_Click(object sender, RoutedEventArgs e) => _core.Call("ctrlAltDel");
 
+    private void TypeText_Click(object sender, RoutedEventArgs e) => _ = TypeTextAsync();
+
+    private bool _typingText;
+
+    /// <summary>Type text (the clipboard, to start with) on the MiSTer key by
+    /// key, as on a US keyboard, at a speed the core copes with; the speed is
+    /// remembered for the host.</summary>
+    private async Task TypeTextAsync()
+    {
+        if (_typingText || !_state.IsConnected) return;
+        _typingText = true;
+        try
+        {
+            var range = _core.Call<double[]>("typeSpeedRange");
+            var profile = _profiles.FirstOrDefault(p => p.Id == _state.ProfileId);
+            string clip = "";
+            try
+            {
+                var content = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+                if (content.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text))
+                    clip = await content.GetTextAsync();
+            }
+            catch (Exception) { }
+            var box = new TextBox
+            {
+                Text = clip,
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                Height = 180,
+                FontFamily = new FontFamily("Consolas"),
+                Header = "Typed key by key, as on a US keyboard (the MiSTer has no clipboard)",
+            };
+            var slider = new Slider
+            {
+                Minimum = range[0],
+                Maximum = range[1],
+                StepFrequency = 1,
+                Value = profile is { TypeSpeed: > 0 } ? profile.TypeSpeed : range[2],
+                Header = "Speed (keys per second): slow it down if letters go missing",
+            };
+            var summary = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.75 };
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "Type text on the MiSTer",
+                Content = new StackPanel { Spacing = 12, Width = 460, Children = { box, slider, summary } },
+                PrimaryButtonText = "Type",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+            };
+            void Update()
+            {
+                var speed = Math.Round(slider.Value);
+                var p = _core.Call<TextTyping>("textTyping", new { text = box.Text, keysPerSec = speed });
+                bool canType = _state.IsConnected && !_state.SomeoneElseInControl;
+                string time = p.Seconds < 60 ? $"{Math.Ceiling(p.Seconds)} s" : $"{Math.Ceiling(p.Seconds / 60)} min";
+                summary.Text = !canType ? "Someone else has control of this MiSTer: take control first."
+                    : p.Keys == 0 ? "Nothing to type."
+                    : $"{speed} keys/s · {p.Keys} keys, about {time}" +
+                      (p.Skipped > 0 ? $" · {p.Skipped} character(s) can't be typed on a US keyboard and will be skipped" : "");
+                dialog.IsPrimaryButtonEnabled = canType && p.Keys > 0;
+            }
+            box.TextChanged += (_, _) => Update();
+            slider.ValueChanged += (_, _) => Update();
+            Update();
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+                _core.Call("typeText", new { text = box.Text, keysPerSec = Math.Round(slider.Value) });
+        }
+        catch (CoreException e)
+        {
+            Log.Write($"type text: {e.Message}");
+        }
+        finally
+        {
+            _typingText = false;
+        }
+    }
+
     private void SetDisplay(Action<DisplaySettings> change)
     {
         var d = _state.Display.Clone();
@@ -587,6 +665,7 @@ public sealed partial class MainWindow : Window
         const VirtualKeyModifiers Ctrl = VirtualKeyModifiers.Control;
         const VirtualKeyModifiers CtrlShift = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift;
         Add(VirtualKey.K, CtrlShift, () => StartCapture());
+        Add(VirtualKey.V, CtrlShift, () => _ = TypeTextAsync());
         Add(VirtualKey.I, CtrlShift, TogglePin);
         Add(VirtualKey.R, CtrlShift, () => _ = ToggleRecording());
         Add(VirtualKey.M, CtrlShift, () => _core.Call("setMuted", new { muted = !_state.Muted }));

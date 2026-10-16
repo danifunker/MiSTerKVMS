@@ -57,6 +57,71 @@ pub fn key_for_char(c: char) -> Option<(u16, bool)> {
     }
 }
 
+/// The on-screen keyboard's typing: each key held for a tap (60 ms), then
+/// this gap, so cores that scan the keyboard slowly see every key.
+pub const TYPE_GAP_MS: u32 = 25;
+
+/// The Type Text box's speed, keys per second: the range of its slider and
+/// where it starts.
+pub const MIN_TYPE_SPEED: f64 = 2.0;
+pub const MAX_TYPE_SPEED: f64 = 40.0;
+pub const DEFAULT_TYPE_SPEED: f64 = 10.0;
+
+/// How long each key is held, and the gap after it, at `keys_per_sec`: 60%
+/// of a key's time held, at least 15 ms down and 10 ms up.
+pub fn pace(keys_per_sec: f64) -> (u32, u32) {
+    let speed = if keys_per_sec > 0.0 { keys_per_sec.clamp(MIN_TYPE_SPEED, MAX_TYPE_SPEED) } else { DEFAULT_TYPE_SPEED };
+    let per = 1000.0 / speed;
+    let hold = (per * 0.6).max(15.0);
+    let gap = (per - hold).max(10.0);
+    (hold.round() as u32, gap.round() as u32)
+}
+
+/// The slider's range and default, for the apps.
+#[uniffi::export]
+pub fn type_speed_range() -> Vec<f64> {
+    vec![MIN_TYPE_SPEED, MAX_TYPE_SPEED, DEFAULT_TYPE_SPEED]
+}
+
+/// Text as the characters to type: Windows line ends (CR LF) are one Enter,
+/// and the typographic punctuation that phones and documents put in (curly
+/// quotes, dashes, the ellipsis, non-breaking spaces) is what a US keyboard
+/// types instead of being skipped.
+pub fn normalize(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.replace("\r\n", "\n").chars() {
+        match c {
+            '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{2032}' => out.push('\''),
+            '\u{201C}' | '\u{201D}' | '\u{201E}' | '\u{2033}' => out.push('"'),
+            '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2212}' => out.push('-'),
+            '\u{2026}' => out.push_str("..."),
+            '\u{00A0}' | '\u{2007}' | '\u{202F}' => out.push(' '),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// What typing `text` would do, for the apps' Type Text box.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct TextTyping {
+    /// Characters that become key presses.
+    pub keys: u32,
+    /// Characters with no key on a US keyboard (skipped).
+    pub skipped: u32,
+    /// Roughly how long it takes.
+    pub seconds: f64,
+}
+
+#[uniffi::export]
+pub fn text_typing(text: String, keys_per_sec: f64) -> TextTyping {
+    let text = normalize(&text);
+    let keys = text.chars().filter(|&c| key_for_char(c).is_some()).count() as u32;
+    let skipped = text.chars().count() as u32 - keys;
+    let (hold, gap) = pace(keys_per_sec);
+    TextTyping { keys, skipped, seconds: keys as f64 * (hold + gap) as f64 / 1000.0 }
+}
+
 /// HID usage for a key name: "a", "5", "f12", "enter", "lctrl", "ralt", "/".
 pub fn key_by_name(name: &str) -> Option<u16> {
     let n = name.trim().to_ascii_lowercase();
@@ -149,6 +214,30 @@ pub fn unescape(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn typing_counts_keys_skips_and_one_enter_per_line_end() {
+        let t = super::text_typing("ls -l\r\ncd é\n".into(), 10.0);
+        // "ls -l" 5, Enter, "cd " 3, Enter; é has no US key.
+        assert_eq!((t.keys, t.skipped), (10, 1));
+        assert!((t.seconds - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn typographic_punctuation_types_as_plain() {
+        assert_eq!(super::normalize("LOAD \u{201C}*\u{201D},8,1"), "LOAD \"*\",8,1");
+        assert_eq!(super::normalize("it\u{2019}s \u{2014} ok\u{2026}\u{00A0}x"), "it's - ok... x");
+        assert_eq!(super::text_typing("\u{201C}a\u{201D}".into(), 10.0).skipped, 0);
+    }
+
+    #[test]
+    fn pace_holds_most_of_each_key_and_keeps_real_presses() {
+        assert_eq!(super::pace(10.0), (60, 40));
+        assert_eq!(super::pace(2.0), (300, 200));
+        assert_eq!(super::pace(40.0), (15, 10));
+        assert_eq!(super::pace(1000.0), super::pace(40.0), "clamped");
+        assert_eq!(super::pace(0.0), super::pace(10.0), "unset: the default");
+    }
+
     use super::*;
 
     #[test]

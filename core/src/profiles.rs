@@ -70,6 +70,9 @@ pub struct HostProfile {
     pub predictive_cursor_internet: bool,
     pub cursor_lag_internet_ms: f64,
     pub cursor_gain_internet: f64,
+    /// The Type Text box's speed for this host, in keys per second (cores
+    /// take keystrokes differently: computer cores may need it slow).
+    pub type_speed: f64,
 }
 
 impl Default for HostProfile {
@@ -99,6 +102,7 @@ impl Default for HostProfile {
             predictive_cursor_internet: false,
             cursor_lag_internet_ms: 0.0,
             cursor_gain_internet: 0.0,
+            type_speed: crate::text::DEFAULT_TYPE_SPEED,
         }
     }
 }

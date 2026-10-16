@@ -119,6 +119,8 @@ public sealed class HostProfile
     public bool PredictiveCursor { get; set; } = true;
     public double CursorLagMs { get; set; }
     public double CursorGain { get; set; }
+    /// <summary>The Type Text box's speed for this host (keys per second; 0: the default).</summary>
+    public double TypeSpeed { get; set; }
 
     public HostProfile Clone() => (HostProfile)MemberwiseClone();
 
@@ -195,6 +197,14 @@ public sealed class StreamState
     /// <summary>Who has control when someone else does ("" = nobody).</summary>
     public string Holder { get; set; } = "";
     public double RoundTripMs { get; set; }
+}
+
+/// <summary>What typing a text would do (core text_typing).</summary>
+public sealed class TextTyping
+{
+    public uint Keys { get; set; }
+    public uint Skipped { get; set; }
+    public double Seconds { get; set; }
 }
 
 public sealed class DisplaySettings
