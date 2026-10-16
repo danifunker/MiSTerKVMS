@@ -11,6 +11,7 @@ name = "kvms_capture"
 [dependencies]
 cpal = "0.18"
 serde = { version = "1", features = ["derive"] }
+png = "0.18"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

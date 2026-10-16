@@ -1,10 +1,11 @@
-//! Demo hosts: the test pattern instead of a MiSTer's picture, and the input
+//! Demo hosts: the test pattern with MiSTer-Kun (`kvms_capture::pattern::
+//! DEMO_ID`) instead of a MiSTer's picture, and the input
 //! a MiSTer would have received written out as short lines instead of sent
 //! (docs/APP-STORE.md S1). Lets App Review and new users try the apps
 //! without a MiSTer or a capture PC.
 
 use std::collections::VecDeque;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use crate::keymap::linux_to_hid;
@@ -20,60 +21,6 @@ const MOVE_JOIN: Duration = Duration::from_millis(600);
 const CLICK_TIME: Duration = Duration::from_millis(400);
 /// A click this soon after another of the same button is a double click.
 const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(500);
-
-/// MiSTer-Kun, the MiSTer project's mascot (original design by HeWhoisRed;
-/// remastered artwork by baxysquare: apple/Icon/CREDITS.md), drawn on the
-/// demo's test pattern. Rendered from apple/Icon/misterkun.svg:
-/// `rsvg-convert -h 220 apple/Icon/misterkun.svg -o core/assets/misterkun.png`.
-const LOGO_PNG: &[u8] = include_bytes!("../assets/misterkun.png");
-
-/// The logo as premultiplied BGRA rows: (width, height, pixels).
-fn logo() -> &'static (usize, usize, Vec<[u8; 4]>) {
-    static LOGO: OnceLock<(usize, usize, Vec<[u8; 4]>)> = OnceLock::new();
-    LOGO.get_or_init(|| {
-        let mut decoder = png::Decoder::new(std::io::Cursor::new(LOGO_PNG));
-        decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-        let mut reader = decoder.read_info().expect("logo png");
-        let mut buf = vec![0; reader.output_buffer_size().expect("logo size")];
-        let info = reader.next_frame(&mut buf).expect("logo png");
-        let (w, h) = (info.width as usize, info.height as usize);
-        let channels = info.color_type.samples();
-        let pixels = buf[..info.buffer_size()]
-            .chunks_exact(channels)
-            .map(|p| {
-                let (r, g, b, a) = match channels {
-                    4 => (p[0], p[1], p[2], p[3]),
-                    3 => (p[0], p[1], p[2], 255),
-                    _ => (p[0], p[0], p[0], p.get(1).copied().unwrap_or(255)),
-                };
-                let pre = |c: u8| (c as u16 * a as u16 / 255) as u8;
-                [pre(b), pre(g), pre(r), a]
-            })
-            .collect();
-        (w, h, pixels)
-    })
-}
-
-/// Draw MiSTer-Kun in the middle of a BGRA frame.
-pub(crate) fn draw_logo(frame: &mut [u8], stride: usize, width: usize, height: usize) {
-    let (w, h, pixels) = logo();
-    if *w > width || *h > height {
-        return;
-    }
-    let (x0, y0) = ((width - w) / 2, (height - h) / 2);
-    for y in 0..*h {
-        let row = &mut frame[(y0 + y) * stride + x0 * 4..][..w * 4];
-        for (dst, src) in row.chunks_exact_mut(4).zip(&pixels[y * w..(y + 1) * w]) {
-            let a = src[3] as u16;
-            if a == 0 {
-                continue;
-            }
-            for c in 0..3 {
-                dst[c] = (src[c] as u16 + dst[c] as u16 * (255 - a) / 255) as u8;
-            }
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 enum Kind {
@@ -344,22 +291,6 @@ mod tests {
         fn lines(&self) -> Vec<String> {
             self.log.lines_at(self.now)
         }
-    }
-
-    #[test]
-    fn logo_is_drawn_in_the_middle() {
-        let (w, h) = (1280, 720);
-        let mut frame = vec![0u8; w * h * 4];
-        draw_logo(&mut frame, w * 4, w, h);
-        let at = |x: usize, y: usize| &frame[(y * w + x) * 4..][..4];
-        // Corners untouched; MiSTer-Kun's light-grey face in the middle.
-        assert_eq!(at(0, 0), [0, 0, 0, 0]);
-        let face = at(w / 2, h / 2 - 60);
-        assert!(face[0] > 150 && face[1] > 150 && face[2] > 150, "{face:?}");
-        // Too small a frame: left alone.
-        let mut small = vec![7u8; 100 * 100 * 4];
-        draw_logo(&mut small, 400, 100, 100);
-        assert!(small.iter().all(|&b| b == 7));
     }
 
     #[test]

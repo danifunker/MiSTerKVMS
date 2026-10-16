@@ -211,8 +211,8 @@ impl VideoCapture {
     }
 
     fn open_inner(id: &str, format: Option<VideoFormat>, output: Output, audio: bool) -> Result<Self, CaptureError> {
-        if id == pattern::ID {
-            let (p, format) = pattern::Pattern::open(output);
+        if id == pattern::ID || id == pattern::DEMO_ID {
+            let (p, format) = pattern::Pattern::open(output, id == pattern::DEMO_ID);
             let audio = audio.then(|| p.audio());
             return Ok(Self { inner: Inner::Pattern(p), format, audio });
         }

@@ -8,5 +8,5 @@ The app icon features **MiSTer-Kun**, the MiSTer FPGA project's mascot.
 The monitor, keyboard and mouse around it are drawn by `make_icon.py`.
 
 MiSTer-Kun is also drawn on the iPhone app's demo test pattern
-(`core/assets/misterkun.png`, rendered from `misterkun.svg`), and credited in
+(`capture/assets/misterkun.png`, rendered from `misterkun.svg`), stepping across it in place of the white box, and credited in
 each app's About (on the iPhone: Settings → About).
