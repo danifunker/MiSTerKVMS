@@ -6,7 +6,8 @@ import SwiftUI
 /// places are remembered as fractions of the space above the keyboard.
 /// The D-pad also moves on its own: drag the handle on its top-left corner.
 /// The button on its other corner collapses them all into one small round
-/// button where the D-pad was; tapping that brings them back.
+/// button where the D-pad was; tapping that brings them back, dragging it
+/// moves it (and the D-pad: they share their place).
 struct QuickButtons: View {
     @Binding var arranging: Bool
     @AppStorage(Pref.dpad) private var showDpad = true
@@ -26,7 +27,7 @@ struct QuickButtons: View {
             if collapsed && !arranging {
                 if showDpad || showF12 || showBackspace {
                     Floating(id: "dpad", size: CGSize(width: 48, height: 48), initial: Self.dpadStart,
-                             arranging: false, opacity: max(opacity, 0.8)) { expandButton }
+                             arranging: false, opacity: max(opacity, 0.8), draggable: true) { expandButton }
                 }
             } else {
                 pieces
@@ -97,6 +98,8 @@ private struct Floating<Content: View>: View {
     let opacity: Double
     /// A move handle on the top-left corner, outside Arrange mode.
     let handle: Bool
+    /// Moved by dragging it anywhere (a tap still presses it).
+    let draggable: Bool
     let content: Content
     @AppStorage private var x: Double
     @AppStorage private var y: Double
@@ -105,11 +108,12 @@ private struct Floating<Content: View>: View {
     static func key(_ id: String, _ axis: String) -> String { "quick.\(id).\(axis)" }
 
     init(id: String, size: CGSize, initial: CGPoint, arranging: Bool, opacity: Double, handle: Bool = false,
-         @ViewBuilder content: () -> Content) {
+         draggable: Bool = false, @ViewBuilder content: () -> Content) {
         self.size = size
         self.arranging = arranging
         self.opacity = opacity
         self.handle = handle
+        self.draggable = draggable
         self.content = content()
         _x = AppStorage(wrappedValue: initial.x, Self.key(id, "x"))
         _y = AppStorage(wrappedValue: initial.y, Self.key(id, "y"))
@@ -127,6 +131,8 @@ private struct Floating<Content: View>: View {
                 .overlay(alignment: .topLeading) {
                     if handle && !arranging { moveHandle(free: free) }
                 }
+                // Past a few points a touch is a move, not a press.
+                .highPriorityGesture(move(free: free, in: .global, minimumDistance: 8), including: draggable && !arranging ? .all : .subviews)
                 .overlay {
                     if arranging {
                         RoundedRectangle(cornerRadius: 14)
@@ -145,8 +151,8 @@ private struct Floating<Content: View>: View {
     }
 
     /// Drag to a new spot, remembered as fractions of the free space.
-    private func move(free: CGSize, in space: CoordinateSpace) -> some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: space)
+    private func move(free: CGSize, in space: CoordinateSpace, minimumDistance: CGFloat = 0) -> some Gesture {
+        DragGesture(minimumDistance: minimumDistance, coordinateSpace: space)
             .updating($drag) { value, state, _ in state = value.translation }
             .onEnded { value in
                 if free.width > 0 { x = min(1, max(0, (free.width * x + value.translation.width) / free.width)) }
