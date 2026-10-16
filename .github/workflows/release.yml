@@ -3,13 +3,19 @@ name: Build & Release
 # Every push to main publishes a release. The version is MAJOR.MINOR from
 # Cargo.toml plus an auto-incremented patch (0.9.0, 0.9.1, ...). Bump the
 # version in Cargo.toml to start a new series (e.g. 0.10.0, 1.0.0).
-# Pull requests only build and test.
+# Pull requests only build and test. The iPhone app goes to TestFlight only
+# when something it's built from changed (scripts/ios-fingerprint.sh).
 
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      testflight:
+        description: Upload the iPhone app to TestFlight even if it hasn't changed
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -24,6 +30,8 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
+      ios_changed: ${{ steps.ios.outputs.changed }}
+      ios_fingerprint: ${{ steps.ios.outputs.fingerprint }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -37,6 +45,31 @@ jobs:
           if [ -z "$last" ]; then patch=0; else patch=$((last + 1)); fi
           echo "version=$base.$patch" >> "$GITHUB_OUTPUT"
           echo "Version $base.$patch"
+
+      # Compared with the last TestFlight upload (its testflight/<build> tag).
+      - name: Has the iPhone app changed?
+        id: ios
+        env:
+          FORCE: ${{ inputs.testflight }}
+        run: |
+          echo "::group::What the iPhone app is built from"
+          scripts/ios-fingerprint.sh --list
+          echo "::endgroup::"
+          now=$(scripts/ios-fingerprint.sh)
+          last=$(git tag -l 'testflight/*' --sort=-v:refname | head -1)
+          before=""
+          if [ -n "$last" ]; then before=$(git tag -l --format='%(contents:subject)' "$last"); fi
+          if [ "$FORCE" = "true" ]; then
+            changed=true; echo "TestFlight upload asked for"
+          elif [ -z "$last" ]; then
+            changed=true; echo "No TestFlight upload tagged yet"
+          elif [ "$now" != "$before" ]; then
+            changed=true; echo "Changed since $last"
+          else
+            changed=false; echo "Unchanged since $last: no TestFlight upload"
+          fi
+          echo "fingerprint=$now" >> "$GITHUB_OUTPUT"
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
 
   build-mac:
     needs: version
@@ -269,8 +302,11 @@ jobs:
   # are set; everything else only checks that it builds (for the simulator).
   # It goes to TestFlight, not into the GitHub release, so it isn't part of
   # publish and an iOS problem never holds up the desktop release.
+  # Pull requests always build it (for the simulator); main builds and
+  # uploads it only when it changed.
   build-ios:
     needs: version
+    if: github.event_name == 'pull_request' || needs.version.outputs.ios_changed == 'true'
     runs-on: macos-26
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -322,6 +358,16 @@ jobs:
           fi
           trap 'rm -f "$ASC_KEY_PATH"' EXIT
           scripts/build-ios.sh --testflight
+
+      # The next run compares against this upload.
+      - name: Tag the upload
+        if: env.UPLOAD == 'true'
+        env:
+          FINGERPRINT: ${{ needs.version.outputs.ios_fingerprint }}
+        run: |
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            tag -a "testflight/$BUILD_NUMBER" -m "$FINGERPRINT" -m "MiSTerKVMS $VERSION ($BUILD_NUMBER) uploaded to TestFlight"
+          git push origin "testflight/$BUILD_NUMBER"
 
       - name: xcodebuild logs
         if: failure()
