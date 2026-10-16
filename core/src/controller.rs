@@ -832,6 +832,16 @@ impl Controller {
         self.inner.notify(ControllerEvent::Changed);
     }
 
+    /// Whether the shell has shown how to leave capture (once, before the
+    /// first capture, so nobody thinks their computer is stuck).
+    pub fn capture_intro_seen(&self) -> bool {
+        self.inner.store.data().capture_intro_seen
+    }
+
+    pub fn set_capture_intro_seen(&self) {
+        self.inner.store.change(|d| d.capture_intro_seen = true);
+    }
+
     pub fn set_stats_pinned(&self, pinned: bool) {
         self.inner.store.change(|d| d.stats_pinned = pinned);
         if !pinned {

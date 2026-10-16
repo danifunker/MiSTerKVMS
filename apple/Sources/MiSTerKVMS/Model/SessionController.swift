@@ -16,6 +16,10 @@ final class SessionController: ObservableObject {
     @Published private(set) var state: ControllerState
     @Published private(set) var captureMode: InputCapture.Mode?
     @Published private(set) var rawMouseActive = false
+    /// Before the very first capture: show how to get the keyboard and mouse
+    /// back (SessionView's alert), so nobody thinks the Mac is stuck.
+    @Published var askCaptureIntro = false
+    private var introForce = false
     /// When the current recording started (nil = not recording).
     @Published private(set) var recordingSince: Date?
     /// Told when the saved hosts change.
@@ -233,6 +237,11 @@ final class SessionController: ObservableObject {
     func startCapture(force: Bool = false) {
         guard isConnected, !capturing, let view = captureView else { return }
         guard force || !someoneElseInControl else { return }
+        if !core.captureIntroSeen() {
+            introForce = force
+            askCaptureIntro = true
+            return
+        }
         capture.session = core.inputSession()
         capture.start(over: view)
         rawMouseActive = capture.rawActive
@@ -242,6 +251,15 @@ final class SessionController: ObservableObject {
 
     func stopCapture() {
         capture.stop()
+    }
+
+    /// The first-capture alert's answer: capture now, or not yet (it asks
+    /// again next time).
+    func captureIntroAnswered(capture: Bool) {
+        askCaptureIntro = false
+        guard capture else { return }
+        core.setCaptureIntroSeen()
+        startCapture(force: introForce)
     }
 
     func openMisterMenu() {

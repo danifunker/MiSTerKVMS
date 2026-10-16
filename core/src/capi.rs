@@ -232,6 +232,11 @@ fn call(c: &Arc<Controller>, r: Value) -> Result<Value, String> {
             c.flash_stats();
             done
         }
+        "captureIntroSeen" => Ok(json!(c.capture_intro_seen())),
+        "setCaptureIntroSeen" => {
+            c.set_capture_intro_seen();
+            done
+        }
         "setStatsPinned" => {
             c.set_stats_pinned(arg(&r, "pinned")?);
             done

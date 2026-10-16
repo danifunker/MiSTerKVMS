@@ -361,6 +361,11 @@ public sealed partial class MainWindow : Window
     {
         if (!_state.IsConnected || _state.Capturing) return;
         if (_state.SomeoneElseInControl && !force) return;
+        if (!_core.Call<bool>("captureIntroSeen"))
+        {
+            AskCaptureIntro(force);
+            return;
+        }
         // The video area in screen pixels; the hidden pointer sits at its centre.
         double scale = Root.XamlRoot.RasterizationScale;
         Point origin = VideoArea.TransformToVisual(null).TransformPoint(new Point(0, 0));
@@ -384,6 +389,38 @@ public sealed partial class MainWindow : Window
         {
             Log.Write($"capture: {e.Message}");
         }
+    }
+
+    private bool _askingIntro;
+
+    /// <summary>Before the very first capture: how to get the keyboard and
+    /// mouse back, so nobody thinks the PC is stuck. "Not now" asks again
+    /// next time.</summary>
+    private async void AskCaptureIntro(bool force)
+    {
+        if (_askingIntro) return;
+        _askingIntro = true;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = "Your keyboard and mouse are about to go to the MiSTer",
+            Content = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                Text = "The pointer disappears and everything you type goes to the MiSTer. To get them back, " +
+                       "hold Right Win and Right Alt (right of the space bar) and press Esc.\n\n" +
+                       "No Right Win key? Press Ctrl+Alt+Del, then Esc: that always gets them back.\n\n" +
+                       "F12 opens the MiSTer menu. Clicking the picture captures again.",
+            },
+            PrimaryButtonText = "Capture",
+            CloseButtonText = "Not now",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        var answer = await dialog.ShowAsync();
+        _askingIntro = false;
+        if (answer != ContentDialogResult.Primary) return;
+        _core.Call("setCaptureIntroSeen");
+        StartCapture(force);
     }
 
     private void StopCapture()

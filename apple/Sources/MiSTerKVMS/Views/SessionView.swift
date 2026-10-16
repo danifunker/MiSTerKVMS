@@ -10,6 +10,15 @@ struct SessionView: View {
     let onEdit: () -> Void
     @State private var showCaptureHint = false
 
+    /// How to get out of capture, shown once before the first one.
+    static let captureIntro = """
+        The pointer disappears and everything you type goes to the MiSTer. To get them back to your Mac, \
+        hold Right ⌘ and Right ⌥ (right of the space bar) and press Esc. The Release button in the toolbar \
+        does the same once you're back.
+
+        F12 opens the MiSTer menu. Clicking the picture captures again.
+        """
+
     var body: some View {
         ZStack {
             CaptureSurface(controller: controller)
@@ -43,6 +52,13 @@ struct SessionView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { StatusBar() }
+        .alert("Your keyboard and mouse are about to go to the MiSTer", isPresented: $controller.askCaptureIntro) {
+            Button("Capture") { controller.captureIntroAnswered(capture: true) }
+                .keyboardShortcut(.defaultAction)
+            Button("Not Now", role: .cancel) { controller.captureIntroAnswered(capture: false) }
+        } message: {
+            Text(Self.captureIntro)
+        }
         .navigationTitle(profile.name)
         .navigationSubtitle(controller.coreRunning.isEmpty ? profile.subtitle : controller.coreRunning)
         .toolbar {

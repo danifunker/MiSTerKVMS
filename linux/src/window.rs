@@ -86,6 +86,8 @@ pub struct Ui {
     state: RefCell<ControllerState>,
     /// Set while the host list is refilled, so that doesn't open hosts.
     updating_list: Cell<bool>,
+    /// The first-capture dialog is up (connecting and a click can both ask).
+    asking_intro: Cell<bool>,
     title: adw::WindowTitle,
     menu_button: gtk::Button,
     capture_button: gtk::Button,
@@ -360,6 +362,7 @@ impl Ui {
                 stream: None,
             }),
             updating_list: Cell::new(false),
+            asking_intro: Cell::new(false),
             title,
             menu_button,
             capture_button,
@@ -883,9 +886,45 @@ impl Ui {
         if !self.core.is_connected() || self.capture.borrow().is_active() {
             return;
         }
+        if !self.core.capture_intro_seen() {
+            self.ask_capture_intro();
+            return;
+        }
         let note = self.capture.borrow_mut().start(self.video.upcast_ref(), session, raw);
         self.core.set_capturing(true);
         self.show_hint(note);
+    }
+
+    /// Before the very first capture: how to get the keyboard and mouse
+    /// back, so nobody thinks the computer is stuck. "Not now" asks again
+    /// next time.
+    fn ask_capture_intro(self: &Rc<Self>) {
+        if self.asking_intro.replace(true) {
+            return;
+        }
+        let dialog = adw::AlertDialog::new(
+            Some("Your keyboard and mouse are about to go to the MiSTer"),
+            Some(
+                "The pointer disappears and everything you type goes to the MiSTer. To get them back, \
+                 hold Right Super and Right Alt (right of the space bar) and press Esc. Switching to \
+                 another window also gets them back.\n\nF12 opens the MiSTer menu. Clicking the picture \
+                 captures again.",
+            ),
+        );
+        dialog.add_responses(&[("later", "Not Now"), ("capture", "Capture")]);
+        dialog.set_response_appearance("capture", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("capture"));
+        dialog.set_close_response("later");
+        dialog.connect_response(None, |_, response| {
+            if let Some(ui) = ui() {
+                ui.asking_intro.set(false);
+                if response == "capture" {
+                    ui.core.set_capture_intro_seen();
+                    ui.start_capture();
+                }
+            }
+        });
+        dialog.present(Some(&self.window));
     }
 
     fn stop_capture(&self) {
