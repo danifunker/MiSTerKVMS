@@ -52,5 +52,7 @@ every pull request. On `main` it uploads when the app changed
    with the TestFlight app on the Mac.
 
 The secrets are the iPhone app's (`APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`,
-`APPLE_API_ISSUER_ID`, `APPLE_TEAM_ID`); the key's Admin role covers the
-Mac's cloud-managed distribution and installer certificates.
+`APPLE_API_ISSUER_ID`, `APPLE_TEAM_ID`, and `MACOS_CERT_P12` /
+`MACOS_CERT_PASSWORD` / `APPLE_DEV_CERT` for the archive's development
+identity: docs/IPHONE.md §6.1); the key's Admin role covers the Mac's
+cloud-managed distribution and installer certificates.

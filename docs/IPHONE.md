@@ -303,7 +303,18 @@ One-time setup:
    three secrets.
 3. Repository secret **`APPLE_TEAM_ID`**: the 10-character Team ID
    (developer.apple.com → Membership details).
-4. **TestFlight → Internal Testing**: add a group with yourself. Internal
+4. **An Apple Development certificate for CI.** Every runner is a fresh Mac:
+   without a development identity on it, Xcode asks Apple for a new
+   certificate each run, and they pile up until the account's limit ("Your
+   account has reached the maximum number of certificates"). Issue one from
+   the CSR the Developer ID certificate came from (its key is already in
+   `MACOS_CERT_P12`): developer.apple.com → Certificates → + → Apple
+   Development → that CSR → download, then
+   `base64 -i development.cer | gh secret set APPLE_DEV_CERT`.
+   `scripts/ci-app-store-keychain.sh` puts the two together on the runner;
+   without these secrets CI doesn't upload. The export is still signed by
+   Apple's cloud-managed distribution certificate.
+5. **TestFlight → Internal Testing**: add a group with yourself. Internal
    testers get each build without Apple's review, through the TestFlight
    app, once processing finishes (usually 5–30 minutes).
 

@@ -326,7 +326,7 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
       BUILD_NUMBER: ${{ github.run_number }}
-      UPLOAD: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
+      UPLOAD: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.MACOS_CERT_P12 != '' && secrets.MACOS_CERT_PASSWORD != '' && secrets.APPLE_DEV_CERT != '' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -359,7 +359,13 @@ jobs:
           ASC_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
           DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_DEV_CERT: ${{ secrets.APPLE_DEV_CERT }}
         run: |
+          # Sign the archive with our Apple Development identity, never a new
+          # certificate per run (scripts/ci-app-store-keychain.sh).
+          KEYCHAIN=$(scripts/ci-app-store-keychain.sh)
           ASC_KEY_ID=$(printf '%s' "$ASC_KEY_ID" | tr -d '[:space:]')
           ASC_ISSUER_ID=$(printf '%s' "$ASC_ISSUER_ID" | tr -d '[:space:]')
           DEVELOPMENT_TEAM=$(printf '%s' "$DEVELOPMENT_TEAM" | tr -d '[:space:]')
@@ -371,7 +377,7 @@ jobs:
           else
             echo "$APPLE_API_KEY_P8" | base64 --decode > "$ASC_KEY_PATH"
           fi
-          trap 'rm -f "$ASC_KEY_PATH"' EXIT
+          trap 'rm -f "$ASC_KEY_PATH"; security delete-keychain "$KEYCHAIN"' EXIT
           scripts/build-ios.sh --testflight
 
       # The next run compares against this upload.
@@ -405,7 +411,7 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
       BUILD_NUMBER: ${{ github.run_number }}
-      UPLOAD: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.MAC_APP_STORE_UPLOAD == 'true' && secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
+      UPLOAD: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.MAC_APP_STORE_UPLOAD == 'true' && secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.MACOS_CERT_P12 != '' && secrets.MACOS_CERT_PASSWORD != '' && secrets.APPLE_DEV_CERT != '' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -435,7 +441,13 @@ jobs:
           ASC_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
           DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_DEV_CERT: ${{ secrets.APPLE_DEV_CERT }}
         run: |
+          # Sign the archive with our Apple Development identity, never a new
+          # certificate per run (scripts/ci-app-store-keychain.sh).
+          KEYCHAIN=$(scripts/ci-app-store-keychain.sh)
           ASC_KEY_ID=$(printf '%s' "$ASC_KEY_ID" | tr -d '[:space:]')
           ASC_ISSUER_ID=$(printf '%s' "$ASC_ISSUER_ID" | tr -d '[:space:]')
           DEVELOPMENT_TEAM=$(printf '%s' "$DEVELOPMENT_TEAM" | tr -d '[:space:]')
@@ -446,7 +458,7 @@ jobs:
           else
             echo "$APPLE_API_KEY_P8" | base64 --decode > "$ASC_KEY_PATH"
           fi
-          trap 'rm -f "$ASC_KEY_PATH"' EXIT
+          trap 'rm -f "$ASC_KEY_PATH"; security delete-keychain "$KEYCHAIN"' EXIT
           scripts/build-mac-appstore.sh --upload
 
       # The next run compares against this upload.
