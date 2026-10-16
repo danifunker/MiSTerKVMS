@@ -273,6 +273,7 @@ fn serve(server: Arc<Server>, sock: TcpStream) -> Result<(), String> {
             }
             Message::Input(cmds) => stream.input(id, cmds),
             Message::TakeControl => stream.take_control(id),
+            Message::ReleaseControl => stream.release_control(id),
             Message::Ping => viewer.message(Message::Pong { echo: header.timestamp }),
             _ => {}
         }

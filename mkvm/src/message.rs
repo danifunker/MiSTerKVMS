@@ -15,6 +15,7 @@ pub enum Kind {
     Input = 0x03,
     TakeControl = 0x04,
     Pair = 0x05,
+    ReleaseControl = 0x06,
     Ping = 0x10,
     Pong = 0x11,
     Welcome = 0x20,
@@ -242,6 +243,9 @@ pub enum Message {
     Subscribe(Subscribe),
     Input(Vec<InputCmd>),
     TakeControl,
+    /// The holder gives control up: the token is free again (the next
+    /// viewer to send input gets it). Older servers skip it.
+    ReleaseControl,
     Pair(Pair),
     Paired(Paired),
     /// Keep-alive. The header timestamp is the sender's clock.
@@ -277,6 +281,7 @@ impl Message {
             Message::Subscribe(_) => Kind::Subscribe,
             Message::Input(_) => Kind::Input,
             Message::TakeControl => Kind::TakeControl,
+            Message::ReleaseControl => Kind::ReleaseControl,
             Message::Pair(_) => Kind::Pair,
             Message::Paired(_) => Kind::Paired,
             Message::Ping => Kind::Ping,
@@ -301,7 +306,7 @@ impl Message {
             Message::Hello(m) => (0, json(m)),
             Message::Subscribe(m) => (0, json(m)),
             Message::Input(m) => (0, json(m)),
-            Message::TakeControl | Message::Ping => (0, Vec::new()),
+            Message::TakeControl | Message::ReleaseControl | Message::Ping => (0, Vec::new()),
             Message::Pair(m) => (0, json(m)),
             Message::Paired(m) => (0, json(m)),
             Message::Pong { echo } => (0, echo.to_le_bytes().to_vec()),
@@ -340,6 +345,7 @@ impl Message {
             0x02 => Message::Subscribe(parse(&payload)?),
             0x03 => Message::Input(parse(&payload)?),
             0x04 => Message::TakeControl,
+            0x06 => Message::ReleaseControl,
             0x05 => Message::Pair(parse(&payload)?),
             0x10 => Message::Ping,
             0x11 => {

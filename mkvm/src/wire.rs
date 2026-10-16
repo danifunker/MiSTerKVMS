@@ -198,6 +198,7 @@ mod tests {
             InputCmd::Delay { ms: 60 },
         ]));
         round_trip(Message::TakeControl);
+        round_trip(Message::ReleaseControl);
         round_trip(Message::Ping);
         round_trip(Message::Pong { echo: -77 });
         round_trip(Message::Welcome(Welcome {
@@ -282,8 +283,9 @@ mod tests {
             if next() % 2 == 0 {
                 buf[2..6].copy_from_slice(&(len as u32).to_le_bytes());
                 // Known kinds are more interesting.
-                buf[0] = [0x01, 0x02, 0x03, 0x04, 0x10, 0x11, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28]
-                    [(next() % 15) as usize];
+                const KINDS: [u8; 18] =
+                    [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x10, 0x11, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29];
+                buf[0] = KINDS[(next() % KINDS.len() as u64) as usize];
             }
             let _ = decode_one(&buf);
         }

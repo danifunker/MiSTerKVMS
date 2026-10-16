@@ -278,6 +278,14 @@ impl Stream {
         }
     }
 
+    /// The holder gives control up (CAPTURE-SERVER.md §7).
+    pub fn release_control(&self, viewer: ViewerId) {
+        let change = self.control.lock().unwrap().0.release(viewer);
+        if let Some(change) = change {
+            self.control_changed(change);
+        }
+    }
+
     /// Release what the old holder held, then tell everyone.
     fn control_changed(&self, change: ControlChange) {
         let release = self.control.lock().unwrap().1.release_all();

@@ -35,6 +35,7 @@ struct SessionScreen: View {
                     HStack(alignment: .top) {
                         misterButton
                         Spacer()
+                        if model.state.stream?.connected == true { controlButton }
                         Button { model.muted.toggle() } label: {
                             Image(systemName: model.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                                 .font(.system(size: 15))
@@ -148,13 +149,31 @@ struct SessionScreen: View {
         }
     }
 
+    /// Filled: this phone controls the MiSTer, tap to give control up.
+    /// Outline: watching, tap to take control (CAPTURE-SERVER.md §7).
+    private var controlButton: some View {
+        Button {
+            model.inControl ? model.releaseControl() : model.takeControl()
+        } label: {
+            Image(systemName: model.inControl ? "gamecontroller.fill" : "gamecontroller")
+                .font(.system(size: 15))
+                .foregroundStyle(model.inControl ? Color.accentColor : .white)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(.black.opacity(0.5)))
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .tint(.white)
+        .accessibilityLabel(model.inControl ? "Release control" : "Take control")
+    }
+
     /// "Watching — Name has control" with Take control (CAPTURE-SERVER.md §7).
     private var controlBanner: AnyView? {
         guard let stream = model.state.stream, stream.connected else { return nil }
-        if model.someoneElseInControl {
+        if model.someoneElseInControl || model.watching {
+            let who = stream.holder.isEmpty ? "Watching: nobody has control" : "\(stream.holder) has control"
             return AnyView(
                 HStack(spacing: 8) {
-                    Text("\(stream.holder) has control").font(.footnote)
+                    Text(who).font(.footnote)
                     Button("Take control") { model.takeControl() }
                         .font(.footnote.weight(.semibold))
                         .buttonStyle(.borderedProminent)

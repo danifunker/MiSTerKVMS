@@ -214,6 +214,10 @@ impl MkvmLink {
         self.send(&Message::TakeControl);
     }
 
+    pub fn release_control(&self) {
+        self.send(&Message::ReleaseControl);
+    }
+
     /// Input for the MiSTer. Returns false if not connected.
     pub(crate) fn send_input(&self, cmds: Vec<InputCmd>) -> bool {
         !cmds.is_empty() && self.send(&Message::Input(cmds))

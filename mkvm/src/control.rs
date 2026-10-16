@@ -45,6 +45,11 @@ impl Control {
         Some(ControlChange { from, to: Some(viewer) })
     }
 
+    /// "Release control": the holder gives it up. Nothing for anyone else.
+    pub fn release(&mut self, viewer: ViewerId) -> Option<ControlChange> {
+        self.leave(viewer)
+    }
+
     /// A viewer disconnected. Frees the token if it held it.
     pub fn leave(&mut self, viewer: ViewerId) -> Option<ControlChange> {
         if self.holder == Some(viewer) {
@@ -86,5 +91,16 @@ mod tests {
         assert_eq!(c.leave(1), Some(ControlChange { from: Some(1), to: None }));
         assert_eq!(c.holder(), None);
         assert_eq!(c.input(2).0, true);
+    }
+
+    #[test]
+    fn the_holder_can_release_and_anyone_then_takes_it_by_input() {
+        let mut c = Control::default();
+        c.input(1);
+        assert_eq!(c.release(2), None, "only the holder can release");
+        assert_eq!(c.holder(), Some(1));
+        assert_eq!(c.release(1), Some(ControlChange { from: Some(1), to: None }));
+        assert_eq!(c.release(1), None, "already free");
+        assert_eq!(c.input(2), (true, Some(ControlChange { from: None, to: Some(2) })));
     }
 }

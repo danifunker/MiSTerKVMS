@@ -111,7 +111,8 @@ One TCP connection per viewer per stream, `TCP_NODELAY`. No TLS on the LAN.
   - `ping`/`pong`: keep-alive and clock offset (frame age without NTP).
   - `gap`: frames or audio dropped, with counts.
 - **Client → server:** `subscribe`, `input` (the core's input messages:
-  key, mouse move, buttons, release-all), `take_control`, `pong`.
+  key, mouse move, buttons, release-all), `take_control`,
+  `release_control`, `pong`.
 - **Back-pressure:** capture never waits for a slow viewer. Per viewer the
   server keeps only the newest MJPEG frame, or skips to the next keyframe
   (H.264), and a short audio queue; drops are counted. Input is never
@@ -310,6 +311,11 @@ Rules (in `mkvm`, tested as a state machine):
    and the previous holder's client leaves capture mode.
 4. Input from a viewer without control is dropped by the server.
 5. Disconnecting frees the token. Leaving capture mode doesn't.
+6. **Release control:** the holder can give the token up without leaving
+   (the iPhone's controller button); it's then free, so rule 1 applies.
+   The client stops sending input until the user takes control again, or
+   its next touch would take it straight back. Older servers ignore the
+   message.
 
 In the client:
 

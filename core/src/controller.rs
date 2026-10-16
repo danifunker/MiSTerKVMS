@@ -455,6 +455,17 @@ impl Controller {
         }
     }
 
+    /// Capture server hosts: give control up, so another viewer's input
+    /// takes it without asking. Input from here would take it back, so the
+    /// shell stops sending any until the user takes control again. An older
+    /// server ignores it.
+    pub fn release_control(&self) {
+        let link = self.inner.state.lock().unwrap().link.clone();
+        if let Some(link) = link {
+            link.release_control();
+        }
+    }
+
     /// How this computer appears to other viewers (the computer's name
     /// unless set).
     pub fn viewer_name(&self) -> String {

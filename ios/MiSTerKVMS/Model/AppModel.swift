@@ -53,7 +53,7 @@ final class AppModel: ObservableObject {
             saveMovedKeys()
         case .captureRequested:
             // A touch screen is always "capturing" while connected (D6).
-            if !someoneElseInControl { core.setCapturing(capturing: true) }
+            if !someoneElseInControl && !watching { core.setCapturing(capturing: true) }
         case .releaseRequested:
             core.setCapturing(capturing: false)
         }
@@ -70,6 +70,14 @@ final class AppModel: ObservableObject {
         if case .connected = state.connection { return true }
         return false
     }
+
+    /// Control given up from here: no input is sent (it would take control
+    /// back) until the user takes control again.
+    @Published private(set) var watching = false
+
+    /// This phone's input reaches the MiSTer: connected to a capture server
+    /// stream, not watching, nobody else in control.
+    var inControl: Bool { state.stream != nil && !watching && !someoneElseInControl }
 
     /// A capture server stream that someone else controls.
     var someoneElseInControl: Bool {
@@ -242,6 +250,7 @@ final class AppModel: ObservableObject {
     func open(_ profile: HostProfile) {
         guard profile.id != state.profileId else { return }
         latched = []
+        watching = false
         core.open(id: profile.id)
         state = core.state()
     }
@@ -323,14 +332,23 @@ final class AppModel: ObservableObject {
     /// Input from a viewer without control is dropped by the server; the
     /// first input on a free stream takes control (CAPTURE-SERVER.md §7).
     private func ready() -> Bool {
-        guard isConnected, !someoneElseInControl else { return false }
+        guard isConnected, !someoneElseInControl, !watching else { return false }
         if !state.capturing { core.setCapturing(capturing: true) }
         return true
     }
 
     func takeControl() {
+        watching = false
         core.takeControl()
         core.setCapturing(capturing: true)
+    }
+
+    /// Let another viewer have the MiSTer; this phone only watches.
+    func releaseControl() {
+        watching = true
+        core.releaseAll()
+        core.releaseControl()
+        core.setCapturing(capturing: false)
     }
 
     func openMenu() {
