@@ -129,7 +129,7 @@ Every push to `main` builds a universal DMG, a Windows zip and a Linux tarball a
 | `APPLE_API_ISSUER_ID` | Its issuer ID |
 | `APPLE_TEAM_ID` | Apple Team ID; with the API key (Admin role), the iPhone app goes to TestFlight |
 
-Without them the release is ad-hoc signed and not notarized. The iPhone app isn't in the GitHub release: on pushes to `main` that change it, it's uploaded to TestFlight (setup: [docs/IPHONE.md](docs/IPHONE.md) §6.1); without the secrets CI only checks that it builds.
+Without them the release is ad-hoc signed and not notarized. The iPhone app isn't in the GitHub release: on pushes to `main` that change it, it's uploaded to TestFlight (setup: [docs/IPHONE.md](docs/IPHONE.md) §6.1); without the secrets CI only checks that it builds. The Mac App Store build (sandboxed, client only, the iPhone app's listing) uploads the same way once the repository variable `MAC_APP_STORE_UPLOAD` is `true`: see [apple/AppStore/README.md](apple/AppStore/README.md).
 
 ## Credits
 

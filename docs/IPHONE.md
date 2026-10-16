@@ -278,7 +278,7 @@ version is the release's (1.0.N); the build number is the workflow run
 number, which only grows, as App Store Connect requires.
 
 A push to `main` uploads only when the app changed since the last upload.
-`scripts/ios-fingerprint.sh` hashes what the app is built from: `ios/`,
+`scripts/app-fingerprint.sh ios` hashes what the app is built from: `ios/`,
 `scripts/build-ios.sh`, the workspace manifest, uniffi-bindgen, the
 workspace crates kvms-core compiles for iOS (found by `cargo tree`, so a new
 dependency between our crates counts) and the versions of the crates.io
@@ -286,7 +286,8 @@ packages it links for iOS. Each upload is tagged `testflight/<build>` with
 that hash; the `version` job compares against the newest such tag and skips
 `build-ios` on `main` when it matches. A whole crate counts, so a change to
 Windows- or Linux-only code in `capture/` still uploads. To upload anyway,
-run the workflow by hand with **Upload to TestFlight** ticked.
+run the workflow by hand with **Upload the iPhone and Mac App Store apps**
+ticked. The Mac App Store app works the same way (`apple/AppStore/README.md`).
 
 One-time setup:
 

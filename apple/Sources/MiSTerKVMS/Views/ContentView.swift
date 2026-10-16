@@ -1,5 +1,7 @@
 import Combine
+#if canImport(KVMSCore)
 import KVMSCore
+#endif
 import SwiftUI
 
 struct ContentView: View {
@@ -41,7 +43,9 @@ struct ContentView: View {
             // The banner belongs to the detail column; on the whole split view
             // it would draw over the sidebar.
             VStack(spacing: 0) {
+                #if !APP_STORE
                 AccessibilityBanner()
+                #endif
                 if let profile = controller.profile {
                     SessionView(profile: profile, onEdit: { editing = profile })
                 } else {

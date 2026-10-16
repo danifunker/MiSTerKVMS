@@ -1,14 +1,17 @@
 import AppKit
 import Carbon.HIToolbox
 import ApplicationServices
+#if canImport(KVMSCore)
 import KVMSCore
+#endif
 
 /// Captures keyboard and mouse while active and forwards them to a MisterSession.
 ///
 /// With Accessibility permission it uses a HID-level CGEventTap, so system
 /// shortcuts (⌘Tab, ⌘Space, ⌘Q...) reach MiSTer instead of macOS. Without it,
 /// it falls back to in-app event monitors: most keys work, but macOS keeps the
-/// system shortcuts.
+/// system shortcuts. The App Store build (APP_STORE, sandboxed) can't have
+/// Accessibility, so it always uses the monitors.
 @MainActor
 final class InputCapture {
     enum Mode {
@@ -34,12 +37,20 @@ final class InputCapture {
     private var monitors: [Any] = []
     private var resignObserver: NSObjectProtocol?
 
-    static var hasAccessibility: Bool { AXIsProcessTrusted() }
+    static var hasAccessibility: Bool {
+        #if APP_STORE
+        false
+        #else
+        AXIsProcessTrusted()
+        #endif
+    }
 
     /// Shows the system prompt that adds the app to Accessibility settings.
     static func requestAccessibility() {
+        #if !APP_STORE
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+        #endif
     }
 
     func start(over view: NSView) {

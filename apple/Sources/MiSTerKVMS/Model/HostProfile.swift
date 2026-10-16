@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(KVMSCore)
 import KVMSCore
+#endif
 
 // HostProfile is the core's record (core/src/profiles.rs); hosts are saved by
 // the core in ~/Library/Application Support/MiSTerKVMS/profiles.json.

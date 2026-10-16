@@ -1,5 +1,7 @@
 import AppKit
+#if canImport(KVMSCore)
 import KVMSCore
+#endif
 import SwiftUI
 
 struct SessionView: View {
@@ -229,10 +231,12 @@ private struct CaptureHint: View {
                 Text("Raw mouse input needs Input Monitoring permission: using macOS acceleration.")
                     .foregroundStyle(.yellow)
             }
+            #if !APP_STORE
             if mode == .appOnly {
                 Text("Accessibility not allowed: macOS keeps ⌘Tab, ⌘Space and similar shortcuts.")
                     .foregroundStyle(.yellow)
             }
+            #endif
         }
         .font(.callout)
         .padding(.horizontal, 16).padding(.vertical, 10)

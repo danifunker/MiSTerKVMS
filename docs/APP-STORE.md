@@ -1,6 +1,8 @@
 # MiSTerKVMS on the App Store
 
-Plan for taking the iPhone app from TestFlight to a free App Store app.
+Plan for taking the iPhone app from TestFlight to a free App Store app. The
+Mac app can join the same listing (universal purchase): a sandboxed,
+client-only build of it, see [apple/AppStore/README.md](../apple/AppStore/README.md).
 Everything not needed for that is in [BACKLOG.md](BACKLOG.md).
 
 Status: TestFlight builds go out from CI (IPHONE.md §6.1); export compliance

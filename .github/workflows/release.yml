@@ -3,8 +3,9 @@ name: Build & Release
 # Every push to main publishes a release. The version is MAJOR.MINOR from
 # Cargo.toml plus an auto-incremented patch (1.0.0, 1.0.1, ...). Bump the
 # version in Cargo.toml to start a new series (e.g. 1.1.0, 2.0.0).
-# Pull requests only build and test. The iPhone app goes to TestFlight only
-# when something it's built from changed (scripts/ios-fingerprint.sh).
+# Pull requests only build and test. The iPhone app and the Mac App Store app
+# go to App Store Connect only when something they're built from changed
+# (scripts/app-fingerprint.sh).
 # A push that only changes documentation publishes nothing: no build reads
 # docs/ or any .md file (LICENSE is bundled, so it isn't ignored). Its
 # changes go out with the next release.
@@ -19,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       testflight:
-        description: Upload the iPhone app to TestFlight even if it hasn't changed
+        description: Upload the iPhone and Mac App Store apps even if they haven't changed
         type: boolean
         default: false
 
@@ -36,8 +37,10 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
-      ios_changed: ${{ steps.ios.outputs.changed }}
-      ios_fingerprint: ${{ steps.ios.outputs.fingerprint }}
+      ios_changed: ${{ steps.apps.outputs.ios_changed }}
+      ios_fingerprint: ${{ steps.apps.outputs.ios_fingerprint }}
+      mac_changed: ${{ steps.apps.outputs.mac_changed }}
+      mac_fingerprint: ${{ steps.apps.outputs.mac_fingerprint }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -52,30 +55,36 @@ jobs:
           echo "version=$base.$patch" >> "$GITHUB_OUTPUT"
           echo "Version $base.$patch"
 
-      # Compared with the last TestFlight upload (its testflight/<build> tag).
-      - name: Has the iPhone app changed?
-        id: ios
+      # Each compared with its last upload (its testflight/<build> or
+      # testflight-mac/<build> tag).
+      - name: Have the App Store apps changed?
+        id: apps
         env:
           FORCE: ${{ inputs.testflight }}
         run: |
-          echo "::group::What the iPhone app is built from"
-          scripts/ios-fingerprint.sh --list
-          echo "::endgroup::"
-          now=$(scripts/ios-fingerprint.sh)
-          last=$(git tag -l 'testflight/*' --sort=-v:refname | head -1)
-          before=""
-          if [ -n "$last" ]; then before=$(git tag -l --format='%(contents:subject)' "$last"); fi
-          if [ "$FORCE" = "true" ]; then
-            changed=true; echo "TestFlight upload asked for"
-          elif [ -z "$last" ]; then
-            changed=true; echo "No TestFlight upload tagged yet"
-          elif [ "$now" != "$before" ]; then
-            changed=true; echo "Changed since $last"
-          else
-            changed=false; echo "Unchanged since $last: no TestFlight upload"
-          fi
-          echo "fingerprint=$now" >> "$GITHUB_OUTPUT"
-          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          check() {
+            local app=$1 prefix=$2 now last before changed
+            echo "::group::What the $app app is built from"
+            scripts/app-fingerprint.sh "$app" --list
+            echo "::endgroup::"
+            now=$(scripts/app-fingerprint.sh "$app")
+            last=$(git tag -l "$prefix/*" --sort=-v:refname | head -1)
+            before=""
+            if [ -n "$last" ]; then before=$(git tag -l --format='%(contents:subject)' "$last"); fi
+            if [ "$FORCE" = "true" ]; then
+              changed=true; echo "$app: upload asked for"
+            elif [ -z "$last" ]; then
+              changed=true; echo "$app: no upload tagged yet"
+            elif [ "$now" != "$before" ]; then
+              changed=true; echo "$app: changed since $last"
+            else
+              changed=false; echo "$app: unchanged since $last, no upload"
+            fi
+            echo "${app}_fingerprint=$now" >> "$GITHUB_OUTPUT"
+            echo "${app}_changed=$changed" >> "$GITHUB_OUTPUT"
+          }
+          check ios testflight
+          check mac testflight-mac
 
   build-mac:
     needs: version
@@ -381,6 +390,81 @@ jobs:
         with:
           name: ios-xcodebuild-logs
           path: build/ios/xcodebuild-*.log
+          if-no-files-found: ignore
+
+  # The Mac App Store app (apple/AppStore): the Mac app's sources built
+  # sandboxed and client only, the bundle id shared with the iPhone app. Like
+  # the iPhone app it goes to App Store Connect, not into the GitHub release.
+  # Pull requests always build it; main uploads it when it changed and the
+  # repository variable MAC_APP_STORE_UPLOAD is "true" (set once the app has
+  # macOS added in App Store Connect).
+  build-mac-appstore:
+    needs: version
+    if: github.event_name == 'pull_request' || needs.version.outputs.mac_changed == 'true'
+    runs-on: macos-26
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      UPLOAD: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.MAC_APP_STORE_UPLOAD == 'true' && secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: |
+          xcode=$(printf '%s\n' /Applications/Xcode_*.app | grep -viE 'beta|release_candidate' | sort -V | tail -1)
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+
+      - name: Rust toolchain (macOS, both architectures)
+        run: |
+          rustup toolchain install stable --profile minimal --target aarch64-apple-darwin --target x86_64-apple-darwin
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        if: env.UPLOAD != 'true'
+        run: scripts/build-mac-appstore.sh
+
+      - name: Build and upload to App Store Connect
+        if: env.UPLOAD == 'true'
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          ASC_KEY_ID=$(printf '%s' "$ASC_KEY_ID" | tr -d '[:space:]')
+          ASC_ISSUER_ID=$(printf '%s' "$ASC_ISSUER_ID" | tr -d '[:space:]')
+          DEVELOPMENT_TEAM=$(printf '%s' "$DEVELOPMENT_TEAM" | tr -d '[:space:]')
+          export ASC_KEY_ID ASC_ISSUER_ID DEVELOPMENT_TEAM
+          export ASC_KEY_PATH="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          if printf '%s' "$APPLE_API_KEY_P8" | grep -q "BEGIN PRIVATE KEY"; then
+            printf '%s\n' "$APPLE_API_KEY_P8" > "$ASC_KEY_PATH"
+          else
+            echo "$APPLE_API_KEY_P8" | base64 --decode > "$ASC_KEY_PATH"
+          fi
+          trap 'rm -f "$ASC_KEY_PATH"' EXIT
+          scripts/build-mac-appstore.sh --upload
+
+      # The next run compares against this upload.
+      - name: Tag the upload
+        if: env.UPLOAD == 'true'
+        env:
+          FINGERPRINT: ${{ needs.version.outputs.mac_fingerprint }}
+        run: |
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            tag -a "testflight-mac/$BUILD_NUMBER" -m "$FINGERPRINT" -m "MiSTerKVMS $VERSION ($BUILD_NUMBER) uploaded to App Store Connect (Mac)"
+          git push origin "testflight-mac/$BUILD_NUMBER"
+
+      - name: xcodebuild logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac-appstore-xcodebuild-logs
+          path: build/mac-appstore/xcodebuild-*.log
           if-no-files-found: ignore
 
   # Every platform built: publish them together.

@@ -1,4 +1,6 @@
+#if canImport(KVMSCore)
 import KVMSCore
+#endif
 import SwiftUI
 
 struct ProfileEditor: View {

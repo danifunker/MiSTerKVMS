@@ -1,7 +1,9 @@
 import AppKit
 import Foundation
 import QuartzCore
+#if canImport(KVMSCore)
 import KVMSCore
+#endif
 
 /// UI-facing state for the one live MiSTer session. The session logic (input
 /// and video sessions, stats overlay rule, saving learned values, display

@@ -1,7 +1,9 @@
 import AVFoundation
 import CoreMedia
 import Foundation
+#if canImport(KVMSCore)
 import KVMSCore
+#endif
 
 /// Records the session's video and audio to MP4 (H.264 + AAC) with
 /// AVFoundation's hardware encoder.
