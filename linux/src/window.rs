@@ -601,8 +601,9 @@ impl Ui {
         // Refreshed every second while it's open.
         if let Some(popover) = self.info_button.popover() {
             popover.connect_show(|popover| {
-                let Some(ui) = ui() else { return };
-                ui.render_info();
+                if let Some(ui) = ui() {
+                    ui.render_info();
+                }
                 let popover = popover.downgrade();
                 glib::timeout_add_seconds_local(1, move || {
                     let (Some(ui), Some(popover)) = (ui(), popover.upgrade()) else { return glib::ControlFlow::Break };
