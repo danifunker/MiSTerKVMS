@@ -9,6 +9,7 @@ pub mod discover;
 pub mod input;
 pub mod keymap;
 pub mod link;
+pub mod previews;
 pub mod profiles;
 pub mod screenshot;
 pub mod session;

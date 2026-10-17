@@ -15,6 +15,11 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
+                Toggle("Capture keyboard and mouse automatically", isOn: $controller.autoCapture)
+                Text("When a host connects and when you click the picture. Off, you can just watch: Capture (⇧⌘K) sends your keyboard and mouse to the MiSTer. Starting the app with --auto-capture turns it on for that run.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle("Show stats when the connection changes", isOn: $controller.statsOnChange)
                 Text("Flashes the stats overlay for a few seconds when a session connects, drops or changes resolution. They're always one ⌘I away, or pinned with ⇧⌘I.")
                     .font(.caption).foregroundStyle(.secondary)

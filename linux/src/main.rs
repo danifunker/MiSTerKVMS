@@ -40,7 +40,9 @@ fn main() -> gtk::glib::ExitCode {
         }
         window::Window::new(app).present();
     });
-    app.run()
+    // --auto-capture is ours (window.rs reads it); GTK would reject it.
+    let args: Vec<String> = std::env::args().filter(|a| a != "--auto-capture").collect();
+    app.run_with_args(&args)
 }
 
 #[cfg(not(target_os = "linux"))]

@@ -20,12 +20,15 @@ public sealed partial class MainWindow : Window
     private readonly IntPtr _hwnd;
     private VideoSurface? _video;
     private List<HostProfile> _profiles = [];
+    /// <summary>The host list's items (picture, name, core), by profile.</summary>
+    private List<HostItem> _items = [];
     private ControllerState _state = new();
     /// <summary>Set while the host list is being refilled, so selection
     /// changes from that don't open or close hosts.</summary>
     private bool _updatingList;
     private readonly DispatcherTimer _hintTimer = new() { Interval = TimeSpan.FromSeconds(4) };
     private readonly DispatcherTimer _noticeTimer = new() { Interval = TimeSpan.FromSeconds(2.5) };
+    private readonly DispatcherTimer _infoTimer = new() { Interval = TimeSpan.FromSeconds(1) };
 
     public MainWindow()
     {
@@ -39,7 +42,14 @@ public sealed partial class MainWindow : Window
         _core.Event += e => DispatcherQueue.TryEnqueue(() => OnCoreEvent(e));
         _hintTimer.Tick += (_, _) => { _hintTimer.Stop(); CaptureHint.Visibility = Visibility.Collapsed; };
         _noticeTimer.Tick += (_, _) => { _noticeTimer.Stop(); ShotNotice.Visibility = Visibility.Collapsed; };
+        _infoTimer.Tick += (_, _) => RenderInfo();
         StampButton.IsChecked = _core.Call<bool>("screenshotStamp");
+        // MiSTerKVMS.exe --auto-capture: capture by itself this run,
+        // whatever the setting.
+        if (Environment.GetCommandLineArgs().Contains("--auto-capture")) _core.Call("forceAutoCapture");
+        AutoCaptureButton.IsChecked = _core.Call<bool>("autoCapture");
+        _core.Call("setHostPreviews", new { on = true });
+        HostList.SizeChanged += (_, _) => SizePictures();
         Root.Loaded += (_, _) =>
         {
             _video = new VideoSurface(_core, VideoHost);
@@ -75,17 +85,40 @@ public sealed partial class MainWindow : Window
                 // The connection went down, or another viewer took control.
                 Render();
                 break;
+            case "previewsChanged":
+                LoadPreviews();
+                break;
         }
     }
 
     private void LoadProfiles()
     {
         _profiles = _core.Call<List<HostProfile>>("profiles");
+        _items = _profiles.Select(p => new HostItem(p)).ToList();
         _updatingList = true;
-        HostList.ItemsSource = _profiles;
-        HostList.SelectedItem = _profiles.FirstOrDefault(p => p.Id == _state.ProfileId);
+        HostList.ItemsSource = _items;
+        HostList.SelectedItem = _items.FirstOrDefault(i => i.Id == _state.ProfileId);
         _updatingList = false;
         NoHosts.Visibility = _profiles.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        SizePictures();
+        LoadPreviews();
+    }
+
+    private void LoadPreviews()
+    {
+        foreach (var p in _core.Call<List<HostPreview>>("hostPreviews"))
+            _items.FirstOrDefault(i => i.Id == p.Id)?.Update(p);
+    }
+
+    /// <summary>Hosts' pictures as big as the list's width allows (4:3)
+    /// while one or two hosts fit, smaller as more are added so they still
+    /// fit, down to a size that's still recognizable.</summary>
+    private void SizePictures()
+    {
+        double widest = Math.Max(HostList.ActualWidth - 40, 60) * 3 / 4;
+        double fit = (HostList.ActualHeight - 16) / Math.Max(_items.Count, 1) - 60;
+        double height = Math.Min(Math.Max(fit, 54), Math.Min(widest, 220));
+        foreach (var item in _items) item.PictureHeight = height;
     }
 
     private HostProfile? OpenProfile => _profiles.FirstOrDefault(p => p.Id == _state.ProfileId);
@@ -108,9 +141,14 @@ public sealed partial class MainWindow : Window
         CaptureButton.IsEnabled = connected || s.Capturing;
         CaptureButton.Label = s.Capturing ? "Release" : "Capture";
         CaptureIcon.Glyph = s.Capturing ? "" : "";
+        bool auto = _core.Call<bool>("captureAutomatically");
         ToolTipService.SetToolTip(CaptureButton, s.Capturing
             ? "Release keyboard and mouse (Right Win + Right Alt + Esc)"
-            : "Send keyboard and mouse to MiSTer (or click the screen)");
+            : auto ? "Send keyboard and mouse to MiSTer (Ctrl+Shift+K, or click the screen)"
+            : "Send keyboard and mouse to MiSTer (Ctrl+Shift+K)");
+        PlaceholderHint.Text = auto
+            ? "Click here to capture keyboard and mouse"
+            : "Watching. Capture (Ctrl+Shift+K) sends your keyboard and mouse to the MiSTer.";
         FitButton.IsChecked = s.Display.ScaleMode == ScaleMode.Fit;
         IntegerButton.IsChecked = s.Display.ScaleMode == ScaleMode.Integer;
         NativeButton.IsChecked = s.Display.ScaleMode == ScaleMode.Native;
@@ -310,7 +348,7 @@ public sealed partial class MainWindow : Window
     private void HostList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_updatingList) return;
-        if (HostList.SelectedItem is HostProfile p) _core.Call("open", new { id = p.Id });
+        if (HostList.SelectedItem is HostItem i) _core.Call("open", new { id = i.Id });
         else _core.Call("close");
     }
 
@@ -415,7 +453,9 @@ public sealed partial class MainWindow : Window
                 Text = "The pointer disappears and everything you type goes to the MiSTer. To get them back, " +
                        "hold Right Win and Right Alt (right of the space bar) and press Esc.\n\n" +
                        "No Right Win key? Press Ctrl+Alt+Del, then Esc: that always gets them back.\n\n" +
-                       "F12 opens the MiSTer menu. Clicking the picture captures again.",
+                       "F12 opens the MiSTer menu. " +
+                       (_core.Call<bool>("captureAutomatically") ? "Clicking the picture" : "The Capture button (Ctrl+Shift+K)") +
+                       " captures again.",
             },
             PrimaryButtonText = "Capture",
             CloseButtonText = "Not now",
@@ -439,9 +479,12 @@ public sealed partial class MainWindow : Window
         else StartCapture();
     }
 
+    /// <summary>Clicking the picture captures only with Capture
+    /// automatically; otherwise it just watches.</summary>
     private void Video_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        if (e.GetCurrentPoint(VideoArea).Properties.IsLeftButtonPressed) StartCapture();
+        if (e.GetCurrentPoint(VideoArea).Properties.IsLeftButtonPressed && _core.Call<bool>("captureAutomatically"))
+            StartCapture();
     }
 
     /// <summary>Not capturing: Ctrl+wheel zooms, the wheel pans when zoomed in.</summary>
@@ -680,6 +723,53 @@ public sealed partial class MainWindow : Window
     private void Stamp_Click(object sender, RoutedEventArgs e) =>
         _core.Call("setScreenshotStamp", new { on = StampButton.IsChecked == true });
 
+    // MARK: Connection info
+
+    private sealed class InfoLine
+    {
+        public string Label { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+
+    private void InfoFlyout_Opening(object? sender, object e)
+    {
+        RenderInfo();
+        _infoTimer.Start();
+    }
+
+    private void InfoFlyout_Closed(object? sender, object e) => _infoTimer.Stop();
+
+    private void ShowInfo()
+    {
+        if (OpenProfile != null) InfoFlyout.ShowAt(InfoButton);
+    }
+
+    private void RenderInfo()
+    {
+        var lines = _core.Call<List<InfoLine>>("connectionInfo");
+        InfoGrid.Children.Clear();
+        InfoGrid.RowDefinitions.Clear();
+        for (int i = 0; i < lines.Count; i++)
+        {
+            InfoGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var label = new TextBlock
+            {
+                Text = lines[i].Label,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            };
+            var value = new TextBlock { Text = lines[i].Value, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+            Grid.SetRow(label, i);
+            Grid.SetRow(value, i);
+            Grid.SetColumn(value, 1);
+            InfoGrid.Children.Add(label);
+            InfoGrid.Children.Add(value);
+        }
+    }
+
+    private void AutoCapture_Click(object sender, RoutedEventArgs e) =>
+        _core.Call("setAutoCapture", new { on = AutoCaptureButton.IsChecked == true });
+
     private void ShowNotice(string text)
     {
         ShotNoticeText.Text = text;
@@ -742,6 +832,7 @@ public sealed partial class MainWindow : Window
         Add(VirtualKey.K, CtrlShift, () => StartCapture());
         Add(VirtualKey.V, CtrlShift, () => _ = TypeTextAsync());
         Add(VirtualKey.I, CtrlShift, TogglePin);
+        Add(VirtualKey.I, VirtualKeyModifiers.Control | VirtualKeyModifiers.Menu, ShowInfo);
         Add(VirtualKey.R, CtrlShift, () => _ = ToggleRecording());
         Add(VirtualKey.C, CtrlShift, () => _ = CopyScreenshot());
         Add(VirtualKey.S, CtrlShift, SaveScreenshot);

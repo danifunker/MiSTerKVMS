@@ -26,6 +26,8 @@ mdns-sd = "0.13"
 png = "0.18"
 # Screenshots: the core and time under the picture.
 font8x8 = { version = "0.3", default-features = false }
+# The Windows app gets host previews' JPEGs through the C API's JSON.
+base64 = "0.23"
 if-addrs = "0.13"
 
 [target.'cfg(windows)'.dependencies]

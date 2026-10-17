@@ -1734,6 +1734,7 @@ dependencies = [
 name = "kvms-core"
 version = "1.0.0"
 dependencies = [
+ "base64",
  "bytemuck",
  "cpal",
  "font8x8",

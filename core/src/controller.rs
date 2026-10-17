@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -17,6 +18,7 @@ use crate::input::{KeyResult, MouseButton};
 use crate::keymap::hid;
 use crate::link::{MkvmLink, StreamState};
 use crate::log;
+use crate::previews::{self, HostPreview, Previews};
 use crate::profiles::{HostProfile, ProfileStore, SourceKind};
 use crate::screenshot::{self, Screenshot};
 use crate::session::{ConnectionState, InputStats, MisterSession, SessionObserver};
@@ -66,10 +68,12 @@ pub enum ControllerEvent {
     /// The saved hosts changed.
     ProfilesChanged,
     /// The connection just came up: start capturing input (auto-capture),
-    /// if the window is active.
+    /// if the window is active. Only with `capture_automatically`.
     CaptureRequested,
     /// The connection went down: stop capturing.
     ReleaseRequested,
+    /// A host's picture or caption in `host_previews()` changed.
+    PreviewsChanged,
 }
 
 /// Implemented by the shell. Called from background threads; hop to the UI
@@ -106,6 +110,23 @@ enum Recorder {
 struct Recording {
     since: Instant,
     recorder: Recorder,
+}
+
+/// One line of the Connection Info panel: "Round trip", "4.2 ms".
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+pub struct InfoLine {
+    pub label: String,
+    pub value: String,
+}
+
+/// "42 s", "3 min", "1 h 5 min".
+fn duration_text(d: Duration) -> String {
+    let s = d.as_secs();
+    match s {
+        0..60 => format!("{s} s"),
+        60..3600 => format!("{} min", s / 60),
+        _ => format!("{} h {} min", s / 3600, s / 60 % 60),
+    }
 }
 
 /// What a viewer asks a capture server stream for besides the host's
@@ -151,6 +172,8 @@ struct State {
     generation: u64,
     capture_on_connect: bool,
     connection: ConnectionState,
+    /// When the connection last came up (None: not connected).
+    connected_since: Option<Instant>,
     core_running: String,
     game_running: String,
     capturing: bool,
@@ -187,6 +210,7 @@ impl Default for State {
             generation: 0,
             capture_on_connect: false,
             connection: not_connected(),
+            connected_since: None,
             core_running: String::new(),
             game_running: String::new(),
             capturing: false,
@@ -222,6 +246,13 @@ struct Inner {
     /// Paired hosts' device keys, by host id: handed over by the shell (the
     /// iPhone Keychain), never written to the settings file.
     device_keys: Mutex<HashMap<String, mkvm::secure::DeviceKey>>,
+    /// Capture automatically this run whatever the setting (the shells'
+    /// --auto-capture launch switch).
+    auto_capture_forced: AtomicBool,
+    /// The shell shows host previews (desktop sidebars); off, no streams
+    /// are looked at.
+    previews_on: AtomicBool,
+    previews: Mutex<Previews>,
     #[cfg(windows)]
     win_capture: Mutex<Option<crate::win::capture::WinCapture>>,
 }
@@ -415,6 +446,7 @@ impl Controller {
         s.game_running.clear();
         s.input_stats = None;
         s.connection = not_connected();
+        s.connected_since = None;
         drop(s);
         self.inner.notify(ControllerEvent::Changed);
     }
@@ -440,6 +472,131 @@ impl Controller {
             recording_error: s.recording_error.clone(),
             stream: s.stream.clone(),
         }
+    }
+
+    /// Keep host previews fresh (off to start with): a shell that shows
+    /// them turns them on. Off, other hosts' streams aren't looked at.
+    pub fn set_host_previews(&self, on: bool) {
+        self.inner.previews_on.store(on, Ordering::Relaxed);
+    }
+
+    /// Each saved host's picture and what it's running, in `profiles()`
+    /// order, for the host list (docs in previews.rs). Refreshed on its
+    /// own while `set_host_previews` is on; PreviewsChanged says when.
+    pub fn host_previews(&self) -> Vec<HostPreview> {
+        let ids: Vec<String> = self.inner.store.profiles().into_iter().map(|p| p.id).collect();
+        self.inner.previews.lock().unwrap().list(&ids)
+    }
+
+    /// The open host's connection in plain words, for a Connection Info
+    /// panel: what it is, where its picture and input go, how the link is
+    /// doing. Empty with no host open. Values change as it runs: refresh
+    /// while the panel is open.
+    pub fn connection_info(&self) -> Vec<InfoLine> {
+        let (profile, connection, since, core, game, link, video, input) = {
+            let s = self.inner.state.lock().unwrap();
+            let Some(profile) = s.profile.clone() else { return Vec::new() };
+            (
+                profile,
+                s.connection.clone(),
+                s.connected_since,
+                s.core_running.clone(),
+                s.game_running.clone(),
+                s.link.clone(),
+                s.video.clone(),
+                s.session.clone(),
+            )
+        };
+        let mut lines = Vec::new();
+        let mut add = |label: &str, value: String| {
+            if !value.trim().is_empty() {
+                lines.push(InfoLine { label: label.into(), value });
+            }
+        };
+        add("Host", profile.name.clone());
+        add(
+            "Status",
+            match (&connection, since) {
+                (ConnectionState::Connected, Some(t)) => format!("Connected for {}", duration_text(t.elapsed())),
+                (ConnectionState::Connected, None) => "Connected".into(),
+                (ConnectionState::Connecting, _) => "Connecting…".into(),
+                (ConnectionState::Disconnected { reason }, _) => format!("Not connected: {reason}"),
+            },
+        );
+        if connection == ConnectionState::Connected {
+            add("Running", previews::core_caption(&core));
+            add("Game", game);
+        }
+        match profile.source_kind() {
+            SourceKind::Demo => add("Picture", "Demo test pattern (no MiSTer)".into()),
+            SourceKind::Local => {
+                add("Picture", format!("Capture card on this computer: {}", profile.local_video));
+                if !profile.local_audio.is_empty() {
+                    add("Sound", profile.local_audio.clone());
+                }
+                add("MiSTer", format!("{}:{} (mrext Remote)", profile.mister_host, profile.mister_port));
+            }
+            SourceKind::Capture => {
+                add("Stream", profile.stream.clone());
+                if let Some(link) = &link {
+                    let st = link.stream_state();
+                    let server = match (st.connected, link.server_name()) {
+                        (true, Some(name)) => name,
+                        (true, None) => "Connected".into(),
+                        (false, _) if st.error.is_empty() => "Connecting…".into(),
+                        (false, _) => st.error.clone(),
+                    };
+                    add("Capture server", server);
+                    if st.connected {
+                        add(
+                            "Route",
+                            match (st.internet, link.encrypted()) {
+                                (true, _) => "Internet, encrypted".into(),
+                                (false, true) => "Home network, encrypted".into(),
+                                (false, false) => "Home network".into(),
+                            },
+                        );
+                        add("Round trip", format!("{:.1} ms", st.round_trip_ms));
+                    }
+                    add("MiSTer", if st.mister_connected { st.mister.clone() } else { format!("{} (not connected to the server)", st.mister) });
+                    add(
+                        "Control",
+                        if st.have_control {
+                            "You".into()
+                        } else if st.holder.is_empty() {
+                            "Nobody (yours when you capture)".into()
+                        } else {
+                            st.holder.clone()
+                        },
+                    );
+                }
+                add("Quality", if profile.quality.is_empty() { "auto".into() } else { profile.quality.clone() });
+                add("Viewer name", self.viewer_name());
+            }
+        }
+        if let Some(v) = video.map(|v| v.stats()) {
+            if v.state == "connected" {
+                let crop = if (v.crop_width, v.crop_height) != (v.source_width, v.source_height) && v.crop_width > 0 {
+                    format!(" (shown {}×{})", v.crop_width, v.crop_height)
+                } else {
+                    String::new()
+                };
+                add("Picture size", format!("{}×{}{crop}", v.source_width, v.source_height));
+                add("Frame rate", format!("{:.1} fps", v.received_fps));
+                if v.frame_age_ms >= 0.0 && v.frame_age_ms < 1000.0 {
+                    add("Delay", format!("≈{:.0} ms capture to screen", v.frame_age_ms));
+                }
+                if v.audio_rate > 0 {
+                    add("Sound", format!("{} Hz, {:.0} ms buffered", v.audio_rate, v.audio_buffer_ms));
+                }
+            } else {
+                add("Picture", v.state);
+            }
+        }
+        if let Some(stats) = input.map(|s| s.stats()) {
+            add("Input", format!("{} messages sent", stats.messages_sent));
+        }
+        lines
     }
 
     /// A demo host's input, as the lines to show over the picture (oldest
@@ -871,6 +1028,31 @@ impl Controller {
         self.inner.store.change(|d| d.capture_intro_seen = true);
     }
 
+    /// Capture keyboard and mouse by themselves, when a session connects
+    /// and when the picture is clicked (the setting; off unless turned on).
+    pub fn auto_capture(&self) -> bool {
+        self.inner.store.data().auto_capture
+    }
+
+    pub fn set_auto_capture(&self, on: bool) {
+        self.inner.store.change(|d| d.auto_capture = on);
+        self.inner.notify(ControllerEvent::Changed);
+    }
+
+    /// The --auto-capture launch switch: capture automatically this run,
+    /// whatever the setting. Not saved.
+    pub fn force_auto_capture(&self) {
+        self.inner.auto_capture_forced.store(true, Ordering::Relaxed);
+        self.inner.notify(ControllerEvent::Changed);
+    }
+
+    /// Whether to capture by itself now: on connect (the core asks with
+    /// CaptureRequested) and when the picture is clicked (the shell asks
+    /// this). Otherwise only the Capture button, menu or shortcut captures.
+    pub fn capture_automatically(&self) -> bool {
+        self.inner.capture_automatically()
+    }
+
     /// Show the stats for a few seconds when the connection changes.
     pub fn stats_on_change(&self) -> bool {
         self.inner.store.data().stats_on_change
@@ -1028,6 +1210,9 @@ impl Controller {
             store,
             state: Mutex::new(state),
             device_keys: Mutex::new(HashMap::new()),
+            auto_capture_forced: AtomicBool::new(false),
+            previews_on: AtomicBool::new(false),
+            previews: Mutex::new(Previews::default()),
             #[cfg(windows)]
             win_capture: Mutex::new(None),
         });
@@ -1099,6 +1284,10 @@ impl State {
 impl Inner {
     fn notify(&self, event: ControllerEvent) {
         self.observer.on_event(event);
+    }
+
+    fn capture_automatically(&self) -> bool {
+        self.auto_capture_forced.load(Ordering::Relaxed) || self.store.data().auto_capture
     }
 
     fn set_capturing(&self, capturing: bool) {
@@ -1357,7 +1546,72 @@ impl Inner {
         self.notify(ControllerEvent::Changed);
     }
 
+    /// Keep the host list's previews current: the open host's from its
+    /// video, the others' by looking at their streams now and then.
+    fn tick_previews(&self) {
+        if !self.previews_on.load(Ordering::Relaxed) {
+            return;
+        }
+        let now = Instant::now();
+        let profiles = self.store.profiles();
+        let ids: Vec<String> = profiles.iter().map(|p| p.id.clone()).collect();
+        let (open, video, caption) = {
+            let s = self.state.lock().unwrap();
+            let caption = previews::open_caption(&s.connection, &s.core_running);
+            (s.profile.as_ref().map(|p| p.id.clone()), s.video.clone(), caption)
+        };
+        let candidates: Vec<String> = profiles
+            .iter()
+            .filter(|p| p.source_kind() == SourceKind::Capture && !p.stream.trim().is_empty() && Some(&p.id) != open.as_ref())
+            .map(|p| p.id.clone())
+            .collect();
+        let (open_due, peek) = {
+            let mut p = self.previews.lock().unwrap();
+            p.retain(&ids);
+            let open_due = open.is_some() && p.open_due(now);
+            (open_due, p.next_peek(&candidates, now))
+        };
+        if let (Some(id), true) = (&open, open_due) {
+            let picture = video.and_then(|v| v.picture_bgra()).and_then(|b| previews::encode(&b, true));
+            let changed = {
+                let mut p = self.previews.lock().unwrap();
+                p.fresh(id, now);
+                p.set(id, picture, caption)
+            };
+            if changed {
+                self.notify(ControllerEvent::PreviewsChanged);
+            }
+        }
+        let Some(id) = peek else { return };
+        let Some(profile) = profiles.into_iter().find(|p| p.id == id) else { return };
+        let (Ok(address), Some(inner)) = (mkvm::StreamAddress::parse(&profile.stream), self.me.upgrade()) else {
+            self.previews.lock().unwrap().peek_done();
+            return;
+        };
+        let remote = self.remote_for(&profile, &address);
+        let viewer = format!("{} (preview)", self.viewer_name());
+        thread::spawn(move || {
+            let found = previews::peek(address, viewer, remote);
+            // Opened meanwhile: its own video says it better.
+            let open = inner.state.lock().unwrap().profile.as_ref().is_some_and(|p| p.id == id);
+            let changed = {
+                let mut p = inner.previews.lock().unwrap();
+                p.peek_done();
+                !open && p.set(&id, found.picture, found.caption)
+            };
+            if changed {
+                inner.notify(ControllerEvent::PreviewsChanged);
+            }
+        });
+    }
+
+    fn viewer_name(&self) -> String {
+        let name = self.store.data().viewer_name;
+        if name.trim().is_empty() { computer_name() } else { name }
+    }
+
     fn tick(&self) {
+        self.tick_previews();
         let (session, video, link) = {
             let s = self.state.lock().unwrap();
             (s.session.clone(), s.video.clone(), s.link.clone())
@@ -1452,17 +1706,25 @@ impl SessionObserver for Observer {
     fn on_state(&self, state: ConnectionState) {
         let Some(inner) = self.inner.upgrade() else { return };
         let mut events = vec![ControllerEvent::Changed];
+        let auto = inner.capture_automatically();
         {
             let mut s = inner.state.lock().unwrap();
             if s.generation != self.generation {
                 return;
             }
             s.connection = state.clone();
+            if state == ConnectionState::Connected {
+                s.connected_since.get_or_insert_with(Instant::now);
+            } else {
+                s.connected_since = None;
+            }
             s.check_signature();
             match state {
                 ConnectionState::Connected if s.capture_on_connect => {
                     s.capture_on_connect = false;
-                    events.push(ControllerEvent::CaptureRequested);
+                    if auto {
+                        events.push(ControllerEvent::CaptureRequested);
+                    }
                 }
                 ConnectionState::Disconnected { .. } if s.capturing => {
                     events.push(ControllerEvent::ReleaseRequested);
@@ -1702,6 +1964,7 @@ mod tests {
         });
 
         let (c, events) = controller();
+        c.set_auto_capture(true);
         let p = HostProfile { stream: format!("mkvm://127.0.0.1:{port}/MiSTer%20SS1"), ..Default::default() };
         c.save_profile(p.clone());
         c.open(p.id);
@@ -1728,6 +1991,64 @@ mod tests {
         assert_eq!(c.state().stream.unwrap().holder, "Other PC");
         assert!(events.0.lock().unwrap().contains(&ControllerEvent::ReleaseRequested));
         c.close();
+    }
+
+    #[test]
+    fn connection_info_says_what_is_open() {
+        let (c, _) = controller();
+        assert!(c.connection_info().is_empty());
+        let p = crate::profiles::demo_host_profile();
+        c.save_profile(p.clone());
+        c.open(p.id);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while c.state().connection != ConnectionState::Connected && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        let info = c.connection_info();
+        let value = |label: &str| info.iter().find(|l| l.label == label).map(|l| l.value.clone());
+        assert_eq!(value("Host"), Some(p.name));
+        assert!(value("Status").is_some_and(|s| s.starts_with("Connected for ")), "{info:?}");
+        assert_eq!(value("Picture").as_deref(), Some("Demo test pattern (no MiSTer)"));
+        assert!(info.iter().all(|l| !l.value.trim().is_empty()));
+        c.close();
+        assert!(c.connection_info().is_empty());
+        assert_eq!(duration_text(Duration::from_secs(42)), "42 s");
+        assert_eq!(duration_text(Duration::from_secs(3 * 3600 + 5 * 60 + 9)), "3 h 5 min");
+    }
+
+    /// Connecting captures by itself only with the setting or the launch
+    /// switch.
+    #[test]
+    fn auto_capture_is_off_unless_asked_for() {
+        let connect = |c: &Arc<Controller>| {
+            let p = crate::profiles::demo_host_profile();
+            c.save_profile(p.clone());
+            c.open(p.id);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while c.state().connection != ConnectionState::Connected && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(20));
+            }
+            assert_eq!(c.state().connection, ConnectionState::Connected);
+            c.close();
+        };
+        let requested = |events: &Events| events.0.lock().unwrap().contains(&ControllerEvent::CaptureRequested);
+
+        let (c, events) = controller();
+        assert!(!c.auto_capture() && !c.capture_automatically());
+        connect(&c);
+        assert!(!requested(&events));
+
+        let (c, events) = controller();
+        c.set_auto_capture(true);
+        assert!(c.capture_automatically());
+        connect(&c);
+        assert!(requested(&events));
+
+        let (c, events) = controller();
+        c.force_auto_capture();
+        assert!(c.capture_automatically() && !c.auto_capture());
+        connect(&c);
+        assert!(requested(&events));
     }
 
     #[test]

@@ -64,6 +64,9 @@ struct MiSTerKVMSApp: App {
                 Toggle("Mute", isOn: $controller.muted)
                     .keyboardShortcut("m", modifiers: [.command, .shift])
                 Divider()
+                Button("Connection Info") { controller.showingConnectionInfo.toggle() }
+                    .keyboardShortcut("i", modifiers: [.command, .option])
+                    .disabled(controller.profile == nil)
                 Button("Show Stats") { controller.flashStats() }
                     .keyboardShortcut("i", modifiers: .command)
                 Toggle("Pin Stats Overlay", isOn: $controller.statsPinned)

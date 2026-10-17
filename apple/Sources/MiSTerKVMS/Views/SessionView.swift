@@ -11,13 +11,15 @@ struct SessionView: View {
     @State private var showCaptureHint = false
 
     /// How to get out of capture, shown once before the first one.
-    static let captureIntro = """
+    static func captureIntro(clickCaptures: Bool) -> String {
+        """
         The pointer disappears and everything you type goes to the MiSTer. To get them back to your Mac, \
         hold Right ⌘ and Right ⌥ (right of the space bar) and press Esc. The Release button in the toolbar \
         does the same once you're back.
 
-        F12 opens the MiSTer menu. Clicking the picture captures again.
+        F12 opens the MiSTer menu. \(clickCaptures ? "Clicking the picture" : "The Capture button (⇧⌘K)") captures again.
         """
+    }
 
     var body: some View {
         ZStack {
@@ -65,7 +67,7 @@ struct SessionView: View {
                 .keyboardShortcut(.defaultAction)
             Button("Not Now", role: .cancel) { controller.captureIntroAnswered(capture: false) }
         } message: {
-            Text(Self.captureIntro)
+            Text(Self.captureIntro(clickCaptures: controller.captureAutomatically))
         }
         .navigationTitle(profile.name)
         .navigationSubtitle(controller.coreRunning.isEmpty ? profile.subtitle : controller.coreRunning)
@@ -90,13 +92,23 @@ struct SessionView: View {
                     }
                     .help(controller.someoneElseInControl
                           ? "Someone else has control: use Take Control in the banner"
-                          : "Send keyboard and mouse to MiSTer (or click the screen)")
+                          : controller.captureAutomatically
+                            ? "Send keyboard and mouse to MiSTer (⇧⌘K, or click the screen)"
+                            : "Send keyboard and mouse to MiSTer (⇧⌘K)")
                     .disabled(!controller.isConnected || controller.someoneElseInControl)
                 }
 
                 Button { controller.typingText = true } label: { Label("Type Text", systemImage: "keyboard") }
                     .help("Type pasted text on the MiSTer, key by key (⇧⌘V)")
                     .disabled(!controller.isConnected)
+
+                Button { controller.showingConnectionInfo.toggle() } label: {
+                    Label("Connection Info", systemImage: "info.circle")
+                }
+                .help("Where the picture and input go and how the connection is doing (⌥⌘I)")
+                .popover(isPresented: $controller.showingConnectionInfo, arrowEdge: .bottom) {
+                    ConnectionInfoView()
+                }
 
                 Button(action: onEdit) { Label("Edit Host", systemImage: "slider.horizontal.3") }
                     .disabled(profile.isDemo)
@@ -199,7 +211,9 @@ private struct VideoPlaceholder: View {
                     .multilineTextAlignment(.center).frame(maxWidth: 420)
             }
             if controller.isConnected && !controller.capturing && !controller.someoneElseInControl {
-                Text("Click here to capture keyboard and mouse")
+                Text(controller.captureAutomatically
+                     ? "Click here to capture keyboard and mouse"
+                     : "Watching. Capture (⇧⌘K) sends your keyboard and mouse to the MiSTer.")
                     .font(.callout).padding(.top, 12)
             }
         }
@@ -326,6 +340,29 @@ extension NSImage {
         image.accessibilityDescription = "Copy Screenshot"
         return image
     }()
+}
+
+/// The open host's connection in plain words, refreshed every second while
+/// it's open. The stats overlay (⌘I) is the technical view.
+private struct ConnectionInfoView: View {
+    @EnvironmentObject private var controller: SessionController
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let lines = controller.connectionInfo()
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    GridRow {
+                        Text(line.label).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+                        Text(line.value).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(16)
+            .frame(width: 380, alignment: .leading)
+        }
+    }
 }
 
 private struct StatsOverlay: View {
@@ -505,7 +542,10 @@ struct CaptureSurface: NSViewRepresentable {
 
         override func mouseDown(with event: NSEvent) {
             window?.makeFirstResponder(self)
-            controller?.startCapture()
+            // Without Capture automatically, a click only looks: the
+            // Capture button or ⇧⌘K captures.
+            guard let controller, controller.captureAutomatically else { return }
+            controller.startCapture()
         }
 
         // Only reached when not capturing (capture swallows these).

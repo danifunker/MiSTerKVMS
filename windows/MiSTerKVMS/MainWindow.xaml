@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:core="using:MiSTerKVMS.Core"
+    xmlns:local="using:MiSTerKVMS"
     Title="MiSTerKVMS">
 
     <Grid x:Name="Root">
@@ -28,7 +29,9 @@
             <ListView x:Name="HostList" Grid.Row="1" SelectionMode="Single"
                       SelectionChanged="HostList_SelectionChanged">
                 <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="core:HostProfile">
+                    <!-- The host's picture (kept fresh by the core), its name,
+                         and what it's running. -->
+                    <DataTemplate x:DataType="local:HostItem">
                         <StackPanel Padding="0,6" Spacing="2">
                             <StackPanel.ContextFlyout>
                                 <MenuFlyout>
@@ -36,8 +39,17 @@
                                     <MenuFlyoutItem Text="Delete" Icon="Delete" Click="DeleteHostMenu_Click" Tag="{x:Bind Id}" />
                                 </MenuFlyout>
                             </StackPanel.ContextFlyout>
-                            <TextBlock Text="{x:Bind Name}" />
-                            <TextBlock Text="{x:Bind Subtitle}" Style="{StaticResource CaptionTextBlockStyle}"
+                            <Border Height="{x:Bind PictureHeight, Mode=OneWay}" Margin="0,0,0,4" CornerRadius="6"
+                                    Background="Black" BorderBrush="#1AFFFFFF" BorderThickness="1">
+                                <Grid>
+                                    <FontIcon Glyph="&#xE7F4;" FontSize="24" Foreground="#66FFFFFF"
+                                              Visibility="{x:Bind NoPicture, Mode=OneWay}" />
+                                    <Image Source="{x:Bind Picture, Mode=OneWay}" Stretch="Uniform" />
+                                </Grid>
+                            </Border>
+                            <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{x:Bind Caption, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}"
+                                       TextTrimming="CharacterEllipsis"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
                     </DataTemplate>
@@ -70,6 +82,22 @@
                 <AppBarButton x:Name="CaptureButton" Label="Capture" Click="Capture_Click"
                               ToolTipService.ToolTip="Send keyboard and mouse to MiSTer (or click the screen)">
                     <AppBarButton.Icon><FontIcon x:Name="CaptureIcon" Glyph="&#xE962;" /></AppBarButton.Icon>
+                </AppBarButton>
+                <!-- The open host's connection in plain words (the core's
+                     connectionInfo), refreshed while open. -->
+                <AppBarButton x:Name="InfoButton" Label="Connection info" LabelPosition="Collapsed"
+                              ToolTipService.ToolTip="Where the picture and input go and how the connection is doing (Ctrl+Alt+I)">
+                    <AppBarButton.Icon><FontIcon Glyph="&#xE946;" /></AppBarButton.Icon>
+                    <AppBarButton.Flyout>
+                        <Flyout x:Name="InfoFlyout" Opening="InfoFlyout_Opening" Closed="InfoFlyout_Closed">
+                            <Grid x:Name="InfoGrid" Width="380" ColumnSpacing="12" RowSpacing="6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                            </Grid>
+                        </Flyout>
+                    </AppBarButton.Flyout>
                 </AppBarButton>
                 <AppBarSeparator />
                 <AppBarToggleButton x:Name="FitButton" Label="Fit" Click="Scale_Click" Tag="Fit"
@@ -165,6 +193,10 @@
                     <AppBarButton Label="Import hosts…" Click="Import_Click">
                         <AppBarButton.Icon><FontIcon Glyph="&#xE8B5;" /></AppBarButton.Icon>
                     </AppBarButton>
+                    <AppBarToggleButton x:Name="AutoCaptureButton" Label="Capture automatically" Click="AutoCapture_Click"
+                                        ToolTipService.ToolTip="Capture keyboard and mouse when a host connects and when the picture is clicked. Off: just watch until you press Capture (Ctrl+Shift+K). MiSTerKVMS.exe --auto-capture turns it on for that run.">
+                        <AppBarToggleButton.Icon><FontIcon Glyph="&#xE962;" /></AppBarToggleButton.Icon>
+                    </AppBarToggleButton>
                     <AppBarToggleButton x:Name="StampButton" Label="Core and time on screenshots" Click="Stamp_Click"
                                         ToolTipService.ToolTip="A bar under each screenshot says which core was running and when">
                         <AppBarToggleButton.Icon><FontIcon Glyph="&#xE722;" /></AppBarToggleButton.Icon>

@@ -2,7 +2,7 @@
 
 A KVM-style desktop app for [MiSTer FPGA](https://github.com/MiSTer-devel/Main_MiSTer/wiki): keyboard and mouse go to MiSTer through [mrext Remote](https://github.com/wizzomafizzo/mrext), and video/audio come from **MiSTerKVMS Capture**, our capture server on the PC with the capture card(s), or from a card plugged into this computer.
 
-Status: 1.0. Keyboard/mouse via mrext, video and audio from capture server streams or a local capture card, scaling/zoom/auto-crop, recording to MP4, screenshots (copied or saved as PNG, with the core and time under the picture), an experimental predictive cursor that hides the capture lag, and an iPhone app (TestFlight; see [docs/IPHONE.md](docs/IPHONE.md)). See [docs/CAPTURE-SERVER.md](docs/CAPTURE-SERVER.md), [docs/PLANNING.md](docs/PLANNING.md), and the Windows/Linux port plans in [docs/PORTING.md](docs/PORTING.md).
+Status: 1.0. Keyboard/mouse via mrext, video and audio from capture server streams or a local capture card, scaling/zoom/auto-crop, recording to MP4, screenshots (copied or saved as PNG, with the core and time under the picture), a host list with a picture of each MiSTer and the core it's running, watching without capturing keyboard and mouse until you choose to (Settings, or `--auto-capture`), an experimental predictive cursor that hides the capture lag, and an iPhone app (TestFlight; see [docs/IPHONE.md](docs/IPHONE.md)). See [docs/CAPTURE-SERVER.md](docs/CAPTURE-SERVER.md), [docs/PLANNING.md](docs/PLANNING.md), and the Windows/Linux port plans in [docs/PORTING.md](docs/PORTING.md).
 
 ## Install
 

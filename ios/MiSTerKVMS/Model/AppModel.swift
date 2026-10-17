@@ -23,6 +23,9 @@ final class AppModel: ObservableObject {
     init() {
         let observer = Observer()
         core = Controller(observer: observer)
+        // A touch screen captures as soon as a host connects (D6), whatever
+        // the desktop apps' Capture automatically setting says.
+        core.forceAutoCapture()
         state = core.state()
         observer.model = self
         profiles = core.profiles()
@@ -57,6 +60,8 @@ final class AppModel: ObservableObject {
             if !someoneElseInControl && !watching { core.setCapturing(capturing: true) }
         case .releaseRequested:
             core.setCapturing(capturing: false)
+        case .previewsChanged:
+            break
         }
     }
 

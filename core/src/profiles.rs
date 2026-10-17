@@ -232,6 +232,10 @@ pub struct AppData {
     pub stats_on_change: bool,
     /// Screenshots get a bar under the picture with the core and the time.
     pub screenshot_stamp: bool,
+    /// Capture keyboard and mouse by themselves: when a session connects
+    /// and when the picture is clicked. Off: only the Capture button,
+    /// menu or shortcut does, so a MiSTer can just be watched.
+    pub auto_capture: bool,
 }
 
 impl Default for AppData {
@@ -244,6 +248,7 @@ impl Default for AppData {
             capture_intro_seen: false,
             stats_on_change: false,
             screenshot_stamp: true,
+            auto_capture: false,
         }
     }
 }

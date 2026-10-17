@@ -40,6 +40,7 @@ impl ControllerObserver for CObserver {
             ControllerEvent::ProfilesChanged => c"profilesChanged",
             ControllerEvent::CaptureRequested => c"captureRequested",
             ControllerEvent::ReleaseRequested => c"releaseRequested",
+            ControllerEvent::PreviewsChanged => c"previewsChanged",
         };
         (self.on_event)(self.user as *mut c_void, name.as_ptr());
     }
@@ -135,6 +136,31 @@ fn call(c: &Arc<Controller>, r: Value) -> Result<Value, String> {
         }
 
         "profiles" => to_json(c.profiles()),
+        // [{label, value}]
+        "connectionInfo" => to_json(c.connection_info()),
+        "setHostPreviews" => {
+            c.set_host_previews(arg(&r, "on")?);
+            done
+        }
+        // [{id, jpeg (base64, or null), width, height, caption, version}]
+        "hostPreviews" => {
+            use base64::Engine;
+            let list: Vec<Value> = c
+                .host_previews()
+                .into_iter()
+                .map(|p| {
+                    json!({
+                        "id": p.id,
+                        "jpeg": p.jpeg.map(|j| base64::engine::general_purpose::STANDARD.encode(j)),
+                        "width": p.width,
+                        "height": p.height,
+                        "caption": p.caption,
+                        "version": p.version,
+                    })
+                })
+                .collect();
+            Ok(json!(list))
+        }
         "newProfile" => to_json(HostProfile::default()),
         "saveProfile" => {
             c.save_profile(arg(&r, "profile")?);
@@ -233,6 +259,16 @@ fn call(c: &Arc<Controller>, r: Value) -> Result<Value, String> {
             done
         }
         "captureIntroSeen" => Ok(json!(c.capture_intro_seen())),
+        "autoCapture" => Ok(json!(c.auto_capture())),
+        "setAutoCapture" => {
+            c.set_auto_capture(arg(&r, "on")?);
+            done
+        }
+        "forceAutoCapture" => {
+            c.force_auto_capture();
+            done
+        }
+        "captureAutomatically" => Ok(json!(c.capture_automatically())),
         "typeText" => {
             c.type_text_at(arg(&r, "text")?, arg(&r, "keysPerSec")?);
             done

@@ -539,6 +539,12 @@ impl VideoSession {
     /// The picture now, cropped like the view (borders removed with
     /// auto-crop), in RGB. None before the first picture.
     pub(crate) fn picture(&self) -> Option<crate::screenshot::Rgb> {
+        let b = self.picture_bgra()?;
+        Some(crate::screenshot::Rgb::from_bgra(&b.data, b.stride, (0, 0, b.width, b.height)))
+    }
+
+    /// `picture`, in BGRA.
+    pub(crate) fn picture_bgra(&self) -> Option<kvms_codec::Bgra> {
         let crop = self.shared.counters.lock().unwrap().crop;
         // A picture that hasn't been drawn yet is the newest.
         let slot = self.shared.slot.lock().unwrap();
@@ -548,7 +554,12 @@ impl VideoSession {
             Some(c) if c.x + c.w <= f.width && c.y + c.h <= f.height => c,
             _ => Crop::full(f.width, f.height),
         };
-        Some(crate::screenshot::Rgb::from_bgra(&f.data, f.stride, (c.x, c.y, c.w, c.h)))
+        let mut data = Vec::with_capacity((c.w * c.h * 4) as usize);
+        for row in c.y..c.y + c.h {
+            let start = (row * f.stride + c.x * 4) as usize;
+            data.extend_from_slice(&f.data[start..start + (c.w * 4) as usize]);
+        }
+        Some(kvms_codec::Bgra { width: c.w, height: c.h, stride: c.w * 4, data })
     }
 
     fn redraw(&self) {

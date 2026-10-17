@@ -210,6 +210,21 @@ impl MkvmLink {
         }
     }
 
+    /// The capture server's name and where it is, once connected.
+    pub(crate) fn server_name(&self) -> Option<String> {
+        self.state.lock().unwrap().welcome.as_ref().map(|w| w.server.clone())
+    }
+
+    /// The connection is encrypted (a paired device's key).
+    pub(crate) fn encrypted(&self) -> bool {
+        self.remote.is_some()
+    }
+
+    /// A status value mrext pushed through the server, e.g. "coreRunning".
+    pub(crate) fn status_value(&self, key: &str) -> Option<String> {
+        self.state.lock().unwrap().status.get(key).cloned()
+    }
+
     pub fn take_control(&self) {
         self.send(&Message::TakeControl);
     }

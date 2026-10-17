@@ -3,6 +3,7 @@
 //! capturing.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -32,6 +33,8 @@ const CSS: &str = "
 .status-dot.connecting { color: #e6b800; }
 .status-dot.disconnected { color: #e01b24; }
 .recording { color: #e01b24; }
+.host-picture { background-color: black; border-radius: 6px; }
+.host-picture image { color: rgba(255, 255, 255, 0.4); }
 ";
 
 thread_local! {
@@ -74,6 +77,17 @@ impl Window {
     }
 }
 
+/// A host's row in the sidebar: what previews update.
+struct HostRow {
+    picture: gtk::Picture,
+    frame: gtk::Overlay,
+    placeholder: gtk::Image,
+    caption: gtk::Label,
+    /// Shown until the core knows what the host is running.
+    fallback: String,
+    version: Cell<u64>,
+}
+
 pub struct Ui {
     pub window: adw::ApplicationWindow,
     pub core: Arc<Controller>,
@@ -81,6 +95,7 @@ pub struct Ui {
     frame_pending: Arc<AtomicBool>,
     toasts: adw::ToastOverlay,
     host_list: gtk::ListBox,
+    rows: RefCell<HashMap<String, HostRow>>,
     sidebar_stack: gtk::Stack,
     profiles: RefCell<Vec<HostProfile>>,
     state: RefCell<ControllerState>,
@@ -107,6 +122,9 @@ pub struct Ui {
     last_recording: gtk::Button,
     game_label: gtk::Label,
     capture_label: gtk::Label,
+    /// Connection Info: the open host's connection in plain words.
+    info_button: gtk::MenuButton,
+    info_grid: gtk::Grid,
     capture: RefCell<Capture>,
     hint_timer: RefCell<Option<glib::SourceId>>,
 }
@@ -127,6 +145,12 @@ impl Ui {
         });
         let core = Controller::new(Arc::new(Observer));
         core.set_frame_output(Some(frames.clone()));
+        // `misterkvms --auto-capture` (main.rs keeps GTK from seeing it):
+        // capture by itself this run, whatever the setting.
+        if std::env::args().any(|a| a == "--auto-capture") {
+            core.force_auto_capture();
+        }
+        core.set_host_previews(true);
         kvms_core::log(&format!("settings: {}", core.settings_path()));
 
         // Sidebar: hosts.
@@ -167,6 +191,14 @@ impl Ui {
         capture_button.set_action_name(Some("win.capture"));
         header.pack_start(&menu_button);
         header.pack_start(&capture_button);
+        let info_grid = gtk::Grid::builder().column_spacing(12).row_spacing(6).margin_top(8).margin_bottom(8).margin_start(8).margin_end(8).build();
+        let info_popover = gtk::Popover::builder().child(&info_grid).build();
+        let info_button = gtk::MenuButton::builder()
+            .icon_name("dialog-information-symbolic")
+            .popover(&info_popover)
+            .tooltip_text("Where the picture and input go and how the connection is doing (Ctrl+Alt+I)")
+            .build();
+        header.pack_start(&info_button);
 
         let main_menu = gio::Menu::new();
         let session_section = gio::Menu::new();
@@ -181,6 +213,7 @@ impl Ui {
         stats_section.append(Some("Pin Stats Overlay"), Some("win.pin-stats"));
         main_menu.append_section(None, &stats_section);
         let app_section = gio::Menu::new();
+        app_section.append(Some("Capture Automatically"), Some("win.auto-capture"));
         app_section.append(Some("Core and Time on Screenshots"), Some("win.screenshot-stamp"));
         app_section.append(Some("Export Hosts…"), Some("win.export"));
         app_section.append(Some("Import Hosts…"), Some("win.import"));
@@ -352,6 +385,7 @@ impl Ui {
             frame_pending,
             toasts,
             host_list,
+            rows: RefCell::new(HashMap::new()),
             sidebar_stack,
             profiles: RefCell::new(Vec::new()),
             state: RefCell::new(ControllerState {
@@ -393,6 +427,8 @@ impl Ui {
             last_recording,
             game_label,
             capture_label,
+            info_button,
+            info_grid,
             capture: RefCell::new(Capture::default()),
             hint_timer: RefCell::new(None),
         });
@@ -424,11 +460,14 @@ impl Ui {
             }
         });
 
-        // Click the video to capture.
+        // Click the video to capture (with Capture Automatically; without
+        // it a click only watches).
         let click = gtk::GestureClick::new();
         click.connect_pressed(|_, _, _, _| {
             if let Some(ui) = ui() {
-                ui.start_capture();
+                if ui.core.capture_automatically() {
+                    ui.start_capture();
+                }
             }
         });
         self.video.add_controller(click);
@@ -554,6 +593,27 @@ impl Ui {
             ui.core.set_muted(!muted);
         });
         simple("show-stats", |ui| ui.core.flash_stats());
+        simple("connection-info", |ui| {
+            if ui.state.borrow().profile_id.is_some() {
+                ui.info_button.popup();
+            }
+        });
+        // Refreshed every second while it's open.
+        if let Some(popover) = self.info_button.popover() {
+            popover.connect_show(|popover| {
+                let Some(ui) = ui() else { return };
+                ui.render_info();
+                let popover = popover.downgrade();
+                glib::timeout_add_seconds_local(1, move || {
+                    let (Some(ui), Some(popover)) = (ui(), popover.upgrade()) else { return glib::ControlFlow::Break };
+                    if !popover.is_visible() {
+                        return glib::ControlFlow::Break;
+                    }
+                    ui.render_info();
+                    glib::ControlFlow::Continue
+                });
+            });
+        }
         simple("pin-stats", |ui| {
             let pinned = ui.state.borrow().stats_pinned;
             ui.core.set_stats_pinned(!pinned);
@@ -579,6 +639,22 @@ impl Ui {
             action.set_state(&on.to_variant());
         });
         w.add_action(&stamp);
+        let auto = gio::SimpleAction::new_stateful("auto-capture", None, &self.core.auto_capture().to_variant());
+        auto.connect_activate(|action, _| {
+            let Some(ui) = ui() else { return };
+            let on = !action.state().and_then(|s| s.get::<bool>()).unwrap_or(false);
+            ui.core.set_auto_capture(on);
+            action.set_state(&on.to_variant());
+        });
+        w.add_action(&auto);
+        // Hosts' pictures shrink to fit as the window changes.
+        for prop in ["default-height", "maximized", "fullscreened"] {
+            w.connect_notify_local(Some(prop), |_, _| {
+                if let Some(ui) = ui() {
+                    ui.size_pictures();
+                }
+            });
+        }
         simple("export", |ui| ui.export_profiles());
         simple("import", |ui| ui.import_profiles());
         simple("about", |ui| crate::about::show(&ui.window));
@@ -611,6 +687,7 @@ impl Ui {
             ("win.capture", &["<Control><Shift>k"][..]),
             ("win.type-text", &["<Control><Shift>v"]),
             ("win.show-stats", &["<Control>i"]),
+            ("win.connection-info", &["<Control><Alt>i"]),
             ("win.pin-stats", &["<Control><Shift>i"]),
             ("win.record", &["<Control><Shift>r"]),
             ("win.copy-screenshot", &["<Control><Shift>c"]),
@@ -640,6 +717,7 @@ impl Ui {
                 }
             }
             ControllerEvent::ReleaseRequested => self.stop_capture(),
+            ControllerEvent::PreviewsChanged => self.load_previews(),
         }
     }
 
@@ -659,12 +737,44 @@ impl Ui {
             self.host_list.remove(&row);
         }
         let open = self.state.borrow().profile_id.clone();
+        let mut rows = HashMap::new();
         for p in &profiles {
-            let row = adw::ActionRow::builder()
-                .title(glib::markup_escape_text(&p.name))
-                .subtitle(if p.mister_host.is_empty() { "No address".to_string() } else { p.mister_host.clone() })
-                .build();
+            // The host's picture (kept fresh by the core), its name, and
+            // what it's running.
+            let row = gtk::ListBoxRow::new();
             row.set_widget_name(&p.id);
+            let column = gtk::Box::new(gtk::Orientation::Vertical, 4);
+            column.set_margin_top(6);
+            column.set_margin_bottom(6);
+            let picture = gtk::Picture::new();
+            picture.set_content_fit(gtk::ContentFit::Contain);
+            picture.set_can_shrink(true);
+            let placeholder = gtk::Image::from_icon_name("video-display-symbolic");
+            placeholder.set_pixel_size(24);
+            let frame = gtk::Overlay::new();
+            frame.set_child(Some(&picture));
+            frame.add_overlay(&placeholder);
+            frame.add_css_class("host-picture");
+            frame.set_overflow(gtk::Overflow::Hidden);
+            let name = gtk::Label::new(Some(&p.name));
+            name.set_xalign(0.0);
+            name.set_hexpand(true);
+            name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            let fallback = if p.mister_host.is_empty() { "No address".to_string() } else { p.mister_host.clone() };
+            let caption = gtk::Label::new(Some(&fallback));
+            caption.set_xalign(0.0);
+            caption.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            caption.add_css_class("caption");
+            caption.add_css_class("dim-label");
+            let names = gtk::Box::new(gtk::Orientation::Vertical, 2);
+            names.append(&name);
+            names.append(&caption);
+            let line = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            line.append(&names);
+            column.append(&frame);
+            column.append(&line);
+            row.set_child(Some(&column));
+            rows.insert(p.id.clone(), HostRow { picture, frame, placeholder, caption, fallback, version: Cell::new(0) });
             let menu = gio::Menu::new();
             menu.append(Some("Edit…"), Some(&format!("win.edit-host-id::{}", p.id)));
             menu.append(Some("Delete"), Some(&format!("win.delete-host::{}", p.id)));
@@ -674,7 +784,7 @@ impl Ui {
                 .valign(gtk::Align::Center)
                 .build();
             more.add_css_class("flat");
-            row.add_suffix(&more);
+            line.append(&more);
             self.host_list.append(&row);
             if open.as_deref() == Some(p.id.as_str()) {
                 self.host_list.select_row(Some(&row));
@@ -683,7 +793,67 @@ impl Ui {
         self.updating_list.set(false);
         self.sidebar_stack.set_visible_child_name(if profiles.is_empty() { "empty" } else { "list" });
         *self.profiles.borrow_mut() = profiles;
+        *self.rows.borrow_mut() = rows;
         self.add_row_actions();
+        self.size_pictures();
+        self.load_previews();
+    }
+
+    /// The Connection Info popover's lines (the core's connection_info).
+    fn render_info(&self) {
+        while let Some(child) = self.info_grid.first_child() {
+            self.info_grid.remove(&child);
+        }
+        for (row, line) in self.core.connection_info().into_iter().enumerate() {
+            let label = gtk::Label::new(Some(&line.label));
+            label.set_xalign(1.0);
+            label.set_valign(gtk::Align::Start);
+            label.add_css_class("dim-label");
+            let value = gtk::Label::new(Some(&line.value));
+            value.set_xalign(0.0);
+            value.set_wrap(true);
+            value.set_max_width_chars(44);
+            value.set_selectable(true);
+            self.info_grid.attach(&label, 0, row as i32, 1, 1);
+            self.info_grid.attach(&value, 1, row as i32, 1, 1);
+        }
+    }
+
+    /// The core's pictures and captions for the host list.
+    fn load_previews(&self) {
+        let rows = self.rows.borrow();
+        for p in self.core.host_previews() {
+            let Some(row) = rows.get(&p.id) else { continue };
+            row.caption.set_text(if p.caption.is_empty() { &row.fallback } else { &p.caption });
+            if p.version == row.version.get() {
+                continue;
+            }
+            let Some(jpeg) = p.jpeg else { continue };
+            match gdk::Texture::from_bytes(&glib::Bytes::from_owned(jpeg)) {
+                Ok(texture) => {
+                    row.picture.set_paintable(Some(&texture));
+                    row.placeholder.set_visible(false);
+                    row.version.set(p.version);
+                }
+                Err(e) => kvms_core::log(&format!("preview: {e}")),
+            }
+        }
+    }
+
+    /// Hosts' pictures as big as the sidebar's width allows (4:3) while one
+    /// or two hosts fit, smaller as more are added so they still fit, down
+    /// to a size that's still recognizable.
+    fn size_pictures(&self) {
+        let rows = self.rows.borrow();
+        let width = if self.host_list.width() > 0 { self.host_list.width() } else { 250 };
+        let height = if self.window.height() > 0 { self.window.height() } else { self.window.default_height() };
+        let widest = (width - 40).max(60) as f64 * 3.0 / 4.0;
+        // The sidebar's header bar, then each row's name and caption.
+        let fit = (height - 64) as f64 / rows.len().max(1) as f64 - 60.0;
+        let picture = fit.max(54.0).min(widest).min(220.0);
+        for row in rows.values() {
+            row.frame.set_size_request(-1, picture as i32);
+        }
     }
 
     /// Per-host menu actions (they take the host id).
@@ -736,7 +906,7 @@ impl Ui {
                 a.set_enabled(on);
             }
         };
-        for name in ["edit-host", "scale", "smooth", "auto-crop", "predictive", "zoom-in", "zoom-out", "zoom-reset", "mute", "show-stats"] {
+        for name in ["edit-host", "scale", "smooth", "auto-crop", "predictive", "zoom-in", "zoom-out", "zoom-reset", "mute", "show-stats", "connection-info"] {
             set_enabled(name, open);
         }
         set_enabled("mister-menu", connected);
@@ -759,10 +929,13 @@ impl Ui {
         self.capture_button.set_icon_name(if s.capturing { "process-stop-symbolic" } else { "input-mouse-symbolic" });
         self.capture_button.set_tooltip_text(Some(if s.capturing {
             "Release keyboard and mouse (Right Super + Right Alt + Esc)"
-        } else {
+        } else if self.core.capture_automatically() {
             "Send keyboard and mouse to MiSTer (or click the screen) — Ctrl+Shift+K"
+        } else {
+            "Send keyboard and mouse to MiSTer — Ctrl+Shift+K"
         }));
         self.menu_button.set_sensitive(connected);
+        self.info_button.set_sensitive(open);
         self.zoom_label.set_label(&format!("{}%", (s.display.zoom * 100.0).round()));
         let recording = s.recording_seconds.is_some();
         self.record_button.set_icon_name(if recording { "media-playback-stop-symbolic" } else { "media-record-symbolic" });
@@ -791,7 +964,11 @@ impl Ui {
     fn render_placeholder(&self, profile: Option<&HostProfile>, s: &ControllerState, video_up: bool) {
         self.placeholder.set_visible(!video_up);
         let connected = s.connection == ConnectionState::Connected;
-        let hint = if connected && !s.capturing { "\n\nClick here to capture keyboard and mouse" } else { "" };
+        let hint = match (connected && !s.capturing, self.core.capture_automatically()) {
+            (false, _) => "",
+            (true, true) => "\n\nClick here to capture keyboard and mouse",
+            (true, false) => "\n\nWatching. Capture (Ctrl+Shift+K) sends your keyboard and mouse to the MiSTer.",
+        };
         let (title, detail) = match profile {
             None if self.profiles.borrow().is_empty() => ("Add a host to get started".to_string(), String::new()),
             None => ("Select a Host".to_string(), "Choose a MiSTer in the sidebar to connect.".to_string()),
@@ -1025,14 +1202,14 @@ impl Ui {
         if self.asking_intro.replace(true) {
             return;
         }
+        let again = if self.core.capture_automatically() { "Clicking the picture" } else { "The Capture button (Ctrl+Shift+K)" };
         let dialog = adw::AlertDialog::new(
             Some("Your keyboard and mouse are about to go to the MiSTer"),
-            Some(
+            Some(&format!(
                 "The pointer disappears and everything you type goes to the MiSTer. To get them back, \
                  hold Right Super and Right Alt (right of the space bar) and press Esc. Switching to \
-                 another window also gets them back.\n\nF12 opens the MiSTer menu. Clicking the picture \
-                 captures again.",
-            ),
+                 another window also gets them back.\n\nF12 opens the MiSTer menu. {again} captures again."
+            )),
         );
         dialog.add_responses(&[("later", "Not Now"), ("capture", "Capture")]);
         dialog.set_response_appearance("capture", adw::ResponseAppearance::Suggested);

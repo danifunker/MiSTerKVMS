@@ -42,6 +42,13 @@ final class SessionController: ObservableObject {
             self?.captureMode = nil
             self?.core.setCapturing(capturing: false)
         }
+        // `open -a MiSTerKVMS --args --auto-capture`: capture by itself this
+        // run, whatever the setting.
+        if CommandLine.arguments.contains("--auto-capture") {
+            core.forceAutoCapture()
+        }
+        core.setHostPreviews(on: true)
+        refreshPreviews()
     }
 
     // MARK: - State
@@ -84,6 +91,46 @@ final class SessionController: ObservableObject {
         }
     }
 
+    /// Capture keyboard and mouse by themselves, on connect and when the
+    /// picture is clicked (the setting; off unless turned on).
+    var autoCapture: Bool {
+        get { core.autoCapture() }
+        set {
+            core.setAutoCapture(on: newValue)
+            objectWillChange.send()
+        }
+    }
+
+    /// The setting or the --auto-capture launch switch.
+    var captureAutomatically: Bool { core.captureAutomatically() }
+
+    // MARK: - Host previews (sidebar)
+
+    struct Preview {
+        var image: NSImage?
+        var aspect: Double
+        var caption: String
+        var version: UInt64
+    }
+
+    /// Each host's picture and what it's running, by host id; the core
+    /// refreshes them (the open host every few seconds, the others every 30).
+    @Published private(set) var previews: [String: Preview] = [:]
+
+    private func refreshPreviews() {
+        var next: [String: Preview] = [:]
+        for p in core.hostPreviews() {
+            if let old = previews[p.id], old.version == p.version {
+                next[p.id] = Preview(image: old.image, aspect: old.aspect, caption: p.caption, version: p.version)
+                continue
+            }
+            let image = p.jpeg.flatMap { NSImage(data: $0) }
+            let aspect = p.height > 0 ? Double(p.width) / Double(p.height) : 4.0 / 3.0
+            next[p.id] = Preview(image: image, aspect: aspect, caption: p.caption, version: p.version)
+        }
+        previews = next
+    }
+
     /// A demo host's input, as lines for the picture (core/src/demo.rs).
     func demoInput() -> [String] { core.demoInput() }
 
@@ -91,6 +138,12 @@ final class SessionController: ObservableObject {
 
     /// The Type Text box is open.
     @Published var typingText = false
+
+    /// The Connection Info popover is open (toolbar, Session menu ⌥⌘I).
+    @Published var showingConnectionInfo = false
+
+    /// The open host's connection in plain words (core: connection_info).
+    func connectionInfo() -> [InfoLine] { core.connectionInfo() }
 
     /// Typing reaches the MiSTer: connected, nobody else in control.
     var canType: Bool { isConnected && !someoneElseInControl }
@@ -112,11 +165,15 @@ final class SessionController: ObservableObject {
         case .profilesChanged:
             profiles?.reload()
             refresh()
+            refreshPreviews()
         case .captureRequested:
-            // D6: capture automatically once the connection is up.
+            // D6: capture automatically once the connection is up (only
+            // with Capture automatically on).
             startCapture()
         case .releaseRequested:
             capture.stop()
+        case .previewsChanged:
+            refreshPreviews()
         }
     }
 

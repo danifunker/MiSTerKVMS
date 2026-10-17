@@ -12,9 +12,12 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
+            GeometryReader { geo in
             List(selection: $selection) {
                 ForEach(profiles.profiles) { profile in
-                    HostRow(profile: profile, isLive: controller.profile?.id == profile.id)
+                    HostRow(profile: profile, isLive: controller.profile?.id == profile.id,
+                            preview: controller.previews[profile.id],
+                            pictureHeight: Self.pictureHeight(for: geo.size, hosts: profiles.profiles.count))
                         .tag(profile.id)
                         .contextMenu {
                             if !profile.isDemo {
@@ -23,6 +26,7 @@ struct ContentView: View {
                             Button("Delete", role: .destructive) { delete(profile.id) }
                         }
                 }
+            }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
             .toolbar {
@@ -87,6 +91,16 @@ struct ContentView: View {
         }
     }
 
+    /// How tall the hosts' pictures are: as big as the sidebar's width
+    /// allows (4:3) while one or two hosts fit, smaller as more are added so
+    /// they still fit, down to a size that's still recognizable.
+    static func pictureHeight(for size: CGSize, hosts: Int) -> CGFloat {
+        let widest = max(size.width - 32, 60) * 3 / 4
+        let text: CGFloat = 52
+        let fit = (size.height - 16) / CGFloat(max(hosts, 1)) - text
+        return min(max(fit, 54), widest, 220)
+    }
+
     /// The demo host (core: demo_host_profile): the test pattern, input
     /// listed on the picture. For trying the app, and App Review.
     private func addDemo() {
@@ -105,22 +119,52 @@ struct ContentView: View {
     }
 }
 
+/// A host in the sidebar: its picture (kept fresh by the core), the name,
+/// and what it's running.
 private struct HostRow: View {
     let profile: HostProfile
     let isLive: Bool
+    let preview: SessionController.Preview?
+    let pictureHeight: CGFloat
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
+            picture
             HStack {
                 Text(profile.name).fontWeight(isLive ? .semibold : .regular)
                 if isLive {
                     Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(.green)
                 }
             }
-            Text(profile.subtitle)
-                .font(.caption).foregroundStyle(.secondary)
+            .lineLimit(1)
+            Text(caption)
+                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
+    }
+
+    private var picture: some View {
+        ZStack {
+            Color.black
+            if let image = preview?.image {
+                Image(nsImage: image).resizable().interpolation(.medium)
+            } else {
+                Image(systemName: profile.isDemo ? "play.tv" : "display")
+                    .font(.system(size: min(pictureHeight / 3, 28)))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .aspectRatio(preview?.image == nil ? 4.0 / 3.0 : preview?.aspect ?? 4.0 / 3.0, contentMode: .fit)
+        .frame(maxWidth: .infinity, maxHeight: pictureHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.white.opacity(0.1)))
+    }
+
+    /// The core running, or where the host's picture comes from until
+    /// that's known.
+    private var caption: String {
+        if let caption = preview?.caption, !caption.isEmpty { return caption }
+        return profile.subtitle
     }
 }
 
