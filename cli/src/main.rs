@@ -3,6 +3,7 @@
 // Every command prints one JSON object on stdout (errors: JSON on stderr,
 // exit code 1), so it's easy to script.
 
+mod mcp;
 mod media;
 mod session;
 mod settings;
@@ -24,6 +25,15 @@ use settings::Settings;
 #[derive(Parser)]
 #[command(name = "misterkvms-cli", version, about = "Drive a MiSTer from the command line: screenshots, recording, input, cores.")]
 struct Cli {
+    #[command(flatten)]
+    global: Global,
+    #[command(subcommand)]
+    cmd: Cmd,
+}
+
+/// Options every command takes (and every MCP tool).
+#[derive(clap::Args, Clone, Default)]
+struct Global {
     /// Settings file (default: local.settings.json in this or a parent folder).
     #[arg(long, global = true)]
     settings: Option<PathBuf>,
@@ -44,8 +54,6 @@ struct Cli {
     /// Audio for --local, id or name (default: the card's own).
     #[arg(long, global = true)]
     local_audio: Option<String>,
-    #[command(subcommand)]
-    cmd: Cmd,
 }
 
 #[derive(Subcommand)]
@@ -154,6 +162,9 @@ enum Cmd {
         #[arg(long, default_value_t = 50.0)]
         limit_mb: f64,
     },
+    /// Serve these commands as tools for AI agents: an MCP server on
+    /// stdin/stdout (see docs/MCP.md).
+    Mcp,
     /// Copy a core (.rbf) to the MiSTer over SSH and load it.
     LoadCore {
         rbf: PathBuf,
@@ -188,6 +199,13 @@ enum MouseCmd {
 fn main() {
     warn_old_name();
     let cli = Cli::parse();
+    if let Cmd::Mcp = cli.cmd {
+        if let Err(e) = mcp::serve(cli.global) {
+            eprintln!("{}", json!({ "error": e }));
+            std::process::exit(1);
+        }
+        return;
+    }
     match run(cli) {
         Ok(v) => println!("{v}"),
         Err(e) => {
@@ -209,20 +227,30 @@ fn warn_old_name() {
 }
 
 fn run(cli: Cli) -> Result<Value, String> {
-    let mut s = Settings::load(cli.settings.as_deref())?;
-    s.select(cli.host.as_deref())?;
-    if let Some(m) = cli.mister {
+    exec(cli.cmd, &settings(cli.global)?)
+}
+
+/// The settings file, with the machine and overrides from the command line applied.
+fn settings(g: Global) -> Result<Settings, String> {
+    let mut s = Settings::load(g.settings.as_deref())?;
+    s.select(g.host.as_deref())?;
+    if let Some(m) = g.mister {
         s.mister_host = m;
     }
     // Either source on the command line replaces the settings file's.
-    if cli.stream.is_some() || cli.local.is_some() {
-        s.stream = cli.stream.unwrap_or_default();
-        s.local = cli.local.unwrap_or_default();
+    if g.stream.is_some() || g.local.is_some() {
+        s.stream = g.stream.unwrap_or_default();
+        s.local = g.local.unwrap_or_default();
     }
-    if let Some(a) = cli.local_audio {
+    if let Some(a) = g.local_audio {
         s.local_audio = a;
     }
-    match cli.cmd {
+    Ok(s)
+}
+
+/// Run one command. The CLI and the MCP tools both come through here.
+fn exec(cmd: Cmd, s: &Settings) -> Result<Value, String> {
+    match cmd {
         Cmd::Stream { address, duration: d, max, fps, quality, save } => {
             let max = match max {
                 Some(m) => {
@@ -237,8 +265,9 @@ fn run(cli: Cli) -> Result<Value, String> {
             let found = kvms_core::discover::find_streams(duration(&wait)?.as_millis() as u32);
             Ok(json!({ "streams": found }))
         }
-        Cmd::Soak { duration: d, every, limit_mb } => soak::soak(video_source(&s)?, duration(&d)?, duration(&every)?, limit_mb),
-        Cmd::Status => status(&s),
+        Cmd::Mcp => Err("mcp runs on its own, not as a tool".into()),
+        Cmd::Soak { duration: d, every, limit_mb } => soak::soak(video_source(s)?, duration(&d)?, duration(&every)?, limit_mb),
+        Cmd::Status => status(s),
         Cmd::Machines => Ok(json!({
             "default": s.default,
             "machines": s.machines.iter().map(|(name, m)| json!({
@@ -251,9 +280,9 @@ fn run(cli: Cli) -> Result<Value, String> {
         })),
         Cmd::Screenshot { out, native, full } => {
             if native {
-                native_screenshot(&s, &out)
+                native_screenshot(s, &out)
             } else {
-                let src = Source::open(video_source(&s)?)?;
+                let src = Source::open(video_source(s)?)?;
                 let f = src.fresh_frame(Duration::from_secs(5))?;
                 let area = f.area(full);
                 f.save_png(&out, area)?;
@@ -262,29 +291,29 @@ fn run(cli: Cli) -> Result<Value, String> {
         }
         Cmd::Record { duration: d, out, full } if out.extension().is_some_and(|e| e.eq_ignore_ascii_case("mp4")) => {
             // The apps' recorder: what Record in the apps makes.
-            let session = session::open(video_source(&s)?, !full)?;
+            let session = session::open(video_source(s)?, !full)?;
             session.wait_connected(Duration::from_secs(15))?;
             let path = session.record(duration(&d)?, &out)?;
             let st = session.core.state();
             Ok(json!({ "path": path, "video": st.video_stats }))
         }
         Cmd::Record { duration: d, out, full } => {
-            let src = Source::open(video_source(&s)?)?;
+            let src = Source::open(video_source(s)?)?;
             let r = media::record(&src, duration(&d)?, &out, full)?;
             Ok(json!({
                 "path": out, "frames": r.frames, "fps": r.fps,
                 "width": r.size.0, "height": r.size.1, "audio_seconds": r.audio_seconds,
             }))
         }
-        Cmd::Frames { duration: d, dir, all, full } => frames(&s, duration(&d)?, &dir, all, full),
+        Cmd::Frames { duration: d, dir, all, full } => frames(s, duration(&d)?, &dir, all, full),
         Cmd::Type { text: t, delay, hold } => {
             let delay = Duration::from_millis(delay.or(s.type_delay_ms).unwrap_or(50));
             let hold = Duration::from_millis(hold.or(s.type_hold_ms).unwrap_or(30));
-            with_input(&s, |session| type_text(session, &text::unescape(&t), delay, hold))
+            with_input(s, |session| type_text(session, &text::unescape(&t), delay, hold))
         }
         Cmd::Key { combo, hold } => {
             let keys = text::parse_combo(&combo)?;
-            with_input(&s, |session| {
+            with_input(s, |session| {
                 for &k in &keys {
                     session.key_event(k, true);
                 }
@@ -295,11 +324,11 @@ fn run(cli: Cli) -> Result<Value, String> {
                 Ok(json!({ "pressed": combo }))
             })
         }
-        Cmd::Mouse { action } => with_input(&s, |session| mouse(session, action)),
+        Cmd::Mouse { action } => with_input(s, |session| mouse(session, action)),
         Cmd::WaitForChange { timeout, until_still, min_pixels, full } => {
-            wait_for_change(&s, duration(&timeout)?, until_still.as_deref().map(duration).transpose()?, min_pixels, full)
+            wait_for_change(s, duration(&timeout)?, until_still.as_deref().map(duration).transpose()?, min_pixels, full)
         }
-        Cmd::LoadCore { rbf, dest } => load_core(&s, &rbf, dest),
+        Cmd::LoadCore { rbf, dest } => load_core(s, &rbf, dest),
     }
 }
 

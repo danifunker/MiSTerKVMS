@@ -102,6 +102,8 @@ It reads the MiSTer address and video source from `local.settings.json` (searche
 
 A typical test loop: `misterkvms-cli load-core out.rbf && misterkvms-cli wait-for-change --until-still 3s --timeout 60s && misterkvms-cli type 'dir\n' && misterkvms-cli screenshot --native result.png`.
 
+AI agents can drive it too: `misterkvms-cli mcp` is an MCP server with a tool per command (screenshots come back as images); see [docs/MCP.md](docs/MCP.md).
+
 Several MiSTers can be named under `machines` and picked with `--host` (or `-H`); `default` is used when you don't pass one, and `misterkvms-cli machines` lists them:
 
 ```json

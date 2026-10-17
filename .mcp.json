@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "misterkvms": {
+      "command": "cargo",
+      "args": ["run", "-q", "-p", "kvms-cli", "--bin", "misterkvms-cli", "--", "mcp"]
+    }
+  }
+}
