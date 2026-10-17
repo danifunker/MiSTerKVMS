@@ -31,7 +31,19 @@ if [[ -n "${NOTARY_KEY_PATH:-}" && -n "${NOTARY_KEY_ID:-}" && -n "${NOTARY_ISSUE
   echo "==> Notarizing"
   xcrun notarytool submit "$OUT" --wait \
     --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
-  xcrun stapler staple "$OUT"
+  # Stapling fetches the ticket from Apple's CDN, which can drop the
+  # connection or not have it yet right after acceptance: try a few times.
+  # Without the staple the DMG is still notarized; Gatekeeper looks the
+  # ticket up online on first open, so a release isn't held back for it.
+  stapled=0
+  for attempt in 1 2 3 4 5 6; do
+    if xcrun stapler staple "$OUT"; then stapled=1; break; fi
+    echo "staple attempt $attempt failed; retrying in 30 s"
+    sleep 30
+  done
+  if [[ $stapled == 0 ]]; then
+    echo "::warning::Notarized but not stapled: Apple's ticket service didn't answer. The DMG opens fine online."
+  fi
 else
   echo "==> Not notarizing (no App Store Connect API key provided)"
 fi
