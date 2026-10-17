@@ -32,6 +32,9 @@ struct SessionView: View {
                 if showCaptureHint {
                     CaptureHint(mode: controller.captureMode).allowsHitTesting(false)
                 }
+                if let notice = controller.screenshotNotice {
+                    ScreenshotNotice(text: notice).allowsHitTesting(false)
+                }
                 if profile.isDemo {
                     HStack { DemoInputList(); Spacer() }
                 }
@@ -47,6 +50,7 @@ struct SessionView: View {
             }
             .padding(12)
             .animation(.easeInOut(duration: 0.3), value: controller.statsVisible)
+            .animation(.easeInOut(duration: 0.2), value: controller.screenshotNotice)
         }
         .background(.black)
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -138,6 +142,18 @@ struct SessionView: View {
                     .help("Reset zoom (⌘0)")
                     Button { controller.zoom(by: 1.25) } label: { Label("Zoom In", systemImage: "plus.magnifyingglass") }
                 }
+
+                Button { controller.copyScreenshot() } label: {
+                    Label { Text("Copy Screenshot") } icon: { Image(nsImage: .copyScreenshot) }
+                }
+                .help("Copy the picture to the clipboard (⇧⌘C)")
+                .disabled(!controller.canScreenshot)
+
+                Button { controller.saveScreenshot() } label: {
+                    Label("Save Screenshot", systemImage: "photo.badge.arrow.down")
+                }
+                .help("Save the picture to Pictures/MiSTerKVMS (⇧⌘S)")
+                .disabled(!controller.canScreenshot)
 
                 Button { controller.toggleRecording() } label: {
                     Label(controller.isRecording ? "Stop Recording" : "Record",
@@ -275,6 +291,41 @@ private struct CaptureHint: View {
         .foregroundStyle(.white)
         .transition(.move(edge: .top).combined(with: .opacity))
     }
+}
+
+/// "Screenshot copied" and the like, for a moment.
+private struct ScreenshotNotice: View {
+    let text: String
+
+    var body: some View {
+        Label { Text(text) } icon: { Image(nsImage: .copyScreenshot) }
+            .font(.callout)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(.black.opacity(0.75), in: Capsule())
+            .foregroundStyle(.white)
+            .transition(.move(edge: .top).combined(with: .opacity))
+    }
+}
+
+extension NSImage {
+    /// A camera on a clipboard (there's no such SF Symbol).
+    static let copyScreenshot: NSImage = {
+        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        guard let board = NSImage(systemSymbolName: "clipboard", accessibilityDescription: nil)?.withSymbolConfiguration(config),
+              let camera = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 15 * 0.42, weight: .semibold))
+        else { return NSImage() }
+        let image = NSImage(size: board.size, flipped: false) { rect in
+            board.draw(in: rect)
+            let size = camera.size
+            camera.draw(in: NSRect(x: (rect.width - size.width) / 2, y: (rect.height - size.height) / 2 - rect.height * 0.06,
+                                   width: size.width, height: size.height))
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "Copy Screenshot"
+        return image
+    }()
 }
 
 private struct StatsOverlay: View {

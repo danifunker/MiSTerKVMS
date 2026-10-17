@@ -211,7 +211,7 @@ pub fn demo_host_profile() -> HostProfile {
 }
 
 /// Everything in the settings file.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppData {
     pub profiles: Vec<HostProfile>,
@@ -230,6 +230,22 @@ pub struct AppData {
     /// changes (connects, drops, new core or resolution). Off: only on
     /// request or pinned.
     pub stats_on_change: bool,
+    /// Screenshots get a bar under the picture with the core and the time.
+    pub screenshot_stamp: bool,
+}
+
+impl Default for AppData {
+    fn default() -> Self {
+        Self {
+            profiles: Vec::new(),
+            stats_pinned: false,
+            viewer_name: String::new(),
+            imported_legacy: false,
+            capture_intro_seen: false,
+            stats_on_change: false,
+            screenshot_stamp: true,
+        }
+    }
 }
 
 /// The settings file. Every change is written straight away.

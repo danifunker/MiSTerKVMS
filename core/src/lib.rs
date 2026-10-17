@@ -10,6 +10,7 @@ pub mod input;
 pub mod keymap;
 pub mod link;
 pub mod profiles;
+pub mod screenshot;
 pub mod session;
 pub mod text;
 pub mod video;

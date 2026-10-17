@@ -36,6 +36,15 @@ struct SessionScreen: View {
                         misterButton
                         Spacer()
                         if model.state.stream?.connected == true { controlButton }
+                        Button { model.copyScreenshot() } label: {
+                            Image(uiImage: .copyScreenshot)
+                                .frame(width: 40, height: 40)
+                                .background(Circle().fill(.black.opacity(0.5)))
+                        }
+                        .tint(.white)
+                        // Never disabled: a disabled button lets the tap
+                        // through to the touchpad, a click on the MiSTer.
+                        .accessibilityLabel("Copy screenshot")
                         Button { model.muted.toggle() } label: {
                             Image(systemName: model.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                                 .font(.system(size: 15))
@@ -65,6 +74,14 @@ struct SessionScreen: View {
                     if showBanner, let banner = controlBanner {
                         HStack { banner; Spacer() }
                     }
+                    if let notice = model.screenshotNotice {
+                        Label { Text(notice) } icon: { Image(uiImage: .copyScreenshot) }
+                            .font(.footnote)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Capsule().fill(.black.opacity(0.7)))
+                            .transition(.opacity)
+                            .allowsHitTesting(false)
+                    }
                     if showStats { stats }
                     if model.isDemo {
                         HStack { DemoInputList(); Spacer() }
@@ -73,6 +90,7 @@ struct SessionScreen: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 4)
+                .animation(.easeInOut(duration: 0.2), value: model.screenshotNotice)
             }
         }
         .statusBarHidden()
@@ -211,6 +229,22 @@ struct SessionScreen: View {
         }
         .allowsHitTesting(false)
     }
+}
+
+extension UIImage {
+    /// A camera on a clipboard (there's no such SF Symbol), tinted like one.
+    static let copyScreenshot: UIImage = {
+        let board = UIImage(systemName: "clipboard", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17))
+        let camera = UIImage(systemName: "camera.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17 * 0.42, weight: .semibold))
+        guard let board, let camera else { return UIImage() }
+        let image = UIGraphicsImageRenderer(size: board.size).image { _ in
+            board.draw(at: .zero)
+            let size = camera.size
+            camera.draw(in: CGRect(x: (board.size.width - size.width) / 2, y: (board.size.height - size.height) / 2 + board.size.height * 0.06,
+                                   width: size.width, height: size.height))
+        }
+        return image.withRenderingMode(.alwaysTemplate)
+    }()
 }
 
 /// Show or hide each part of the session screen; back to the host list.

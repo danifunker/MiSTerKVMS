@@ -47,6 +47,14 @@ struct MiSTerKVMSApp: App {
                 Button("Show Last Recording in Finder") { controller.showLastRecording() }
                     .disabled(controller.lastRecording == nil)
                 Divider()
+                Button("Copy Screenshot") { controller.copyScreenshot() }
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                    .disabled(!controller.canScreenshot)
+                Button("Save Screenshot") { controller.saveScreenshot() }
+                    .keyboardShortcut("s", modifiers: [.command, .shift])
+                    .disabled(!controller.canScreenshot)
+                Button("Show Screenshots in Finder") { controller.showScreenshots() }
+                Divider()
                 Button("Zoom In") { controller.zoom(by: 1.25) }
                     .keyboardShortcut("+", modifiers: .command)
                 Button("Zoom Out") { controller.zoom(by: 1 / 1.25) }

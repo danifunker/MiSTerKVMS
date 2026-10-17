@@ -7,7 +7,7 @@ flag. What's different:
 | | DMG (scripts/build-mac.sh) | App Store (this project) |
 |---|---|---|
 | Build | SwiftPM (`apple/Package.swift`) | Xcode project, synchronized folders on the same sources |
-| Sandbox | no | yes (`MiSTerKVMS.entitlements`: network, camera and audio input for a local capture card, Movies for recordings) |
+| Sandbox | no | yes (`MiSTerKVMS.entitlements`: network, camera and audio input for a local capture card, Movies for recordings, Pictures for screenshots) |
 | Capture server, CLI | inside the app | not included: client only |
 | System shortcuts (⌘Tab, ⌘Space) to the MiSTer | with Accessibility (event tap) | no: sandboxed apps can't have Accessibility; in-app capture only |
 | Bundle id | `io.github.misterkvms.MiSTerKVMS` | `com.danifunker.misterkvms`, the iPhone app's: one listing for both (universal purchase) |

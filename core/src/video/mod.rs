@@ -286,6 +286,8 @@ struct Shared {
     /// Recording: where frames go, and the crop fixed when recording started
     /// (so the file doesn't change size when borders are re-detected).
     sink: Mutex<Option<(Arc<dyn MediaSink>, Option<Crop>)>>,
+    /// The picture drawn last, for screenshots.
+    last: Mutex<Option<Frame>>,
 }
 
 /// Mouse movement from the input session → predictive cursor (+ redraw).
@@ -335,6 +337,7 @@ impl VideoSession {
             audio: Mutex::new(None),
             cursor: Mutex::new(CursorTracker::default()),
             sink: Mutex::new(None),
+            last: Mutex::new(None),
         });
 
         match AudioOut::start() {
@@ -533,6 +536,21 @@ impl VideoSession {
 }
 
 impl VideoSession {
+    /// The picture now, cropped like the view (borders removed with
+    /// auto-crop), in RGB. None before the first picture.
+    pub(crate) fn picture(&self) -> Option<crate::screenshot::Rgb> {
+        let crop = self.shared.counters.lock().unwrap().crop;
+        // A picture that hasn't been drawn yet is the newest.
+        let slot = self.shared.slot.lock().unwrap();
+        let last = self.shared.last.lock().unwrap();
+        let f = slot.frame.as_ref().or(last.as_ref())?;
+        let c = match crop {
+            Some(c) if c.x + c.w <= f.width && c.y + c.h <= f.height => c,
+            _ => Crop::full(f.width, f.height),
+        };
+        Some(crate::screenshot::Rgb::from_bgra(&f.data, f.stride, (c.x, c.y, c.w, c.h)))
+    }
+
     fn redraw(&self) {
         self.shared.slot.lock().unwrap().redraw = true;
         self.shared.wake.notify_all();
@@ -752,7 +770,9 @@ fn render_loop(mut renderer: render::Renderer, shared: Arc<Shared>) {
             renderer.upload(&f.data, f.stride, f.width, f.height);
             texture = Some((f.width, f.height));
             timestamp = f.timestamp;
-            shared.slot.lock().unwrap().spare = Some(f.data);
+            // Keep it for screenshots; the one before is the spare buffer.
+            let before = shared.last.lock().unwrap().replace(f);
+            shared.slot.lock().unwrap().spare = before.map(|b| b.data);
         }
 
         let (tw, th) = texture.unwrap_or((1, 1));

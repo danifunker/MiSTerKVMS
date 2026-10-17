@@ -18,6 +18,7 @@ use crate::keymap::hid;
 use crate::link::{MkvmLink, StreamState};
 use crate::log;
 use crate::profiles::{HostProfile, ProfileStore, SourceKind};
+use crate::screenshot::{self, Screenshot};
 use crate::session::{ConnectionState, InputStats, MisterSession, SessionObserver};
 use crate::video::ffmpeg::FfmpegRecorder;
 use crate::video::{CursorModel, DisplaySettings, FrameOutput, MediaSink, NativeSurface, VideoSession, VideoSource, VideoStats};
@@ -888,6 +889,48 @@ impl Controller {
         self.inner.notify(ControllerEvent::Changed);
     }
 
+    // MARK: Screenshots
+
+    /// The picture now as a PNG, cropped like the view. `taken_at` is the
+    /// local time as the shell writes it, e.g. "2026-10-17 14:32:05"; it
+    /// names the file (with the core) and, with `screenshot_stamp`, goes in
+    /// a bar under the picture.
+    pub fn screenshot(&self, taken_at: String) -> Result<Screenshot, ControllerError> {
+        let (video, core) = {
+            let s = self.inner.state.lock().unwrap();
+            (s.video.clone(), s.core_running.clone())
+        };
+        let picture = video.and_then(|v| v.picture()).ok_or_else(|| failed("no picture yet"))?;
+        let stamp = self.screenshot_stamp();
+        screenshot::make(picture, &core, &taken_at, stamp).map_err(failed)
+    }
+
+    /// Take a screenshot and save it in `folder` (made if missing) under its
+    /// own name, or "… (2).png" if two land in the same second. Returns the
+    /// file's path.
+    pub fn save_screenshot(&self, taken_at: String, folder: String) -> Result<String, ControllerError> {
+        let shot = self.screenshot(taken_at)?;
+        let folder = PathBuf::from(folder);
+        std::fs::create_dir_all(&folder).map_err(|e| failed(format!("{}: {e}", folder.display())))?;
+        let stem = shot.file_name.trim_end_matches(".png");
+        let path = (1..)
+            .map(|n| folder.join(if n == 1 { shot.file_name.clone() } else { format!("{stem} ({n}).png") }))
+            .find(|p| !p.exists())
+            .expect("a free name");
+        std::fs::write(&path, &shot.png).map_err(|e| failed(format!("{}: {e}", path.display())))?;
+        log(&format!("screenshot: saved {}", path.display()));
+        Ok(path.display().to_string())
+    }
+
+    /// Screenshots get a bar with the core and the time (on unless turned off).
+    pub fn screenshot_stamp(&self) -> bool {
+        self.inner.store.data().screenshot_stamp
+    }
+
+    pub fn set_screenshot_stamp(&self, on: bool) {
+        self.inner.store.change(|d| d.screenshot_stamp = on);
+    }
+
     // MARK: Recording
 
     /// Record video and audio to `path` (.mp4) through ffmpeg.
@@ -1531,6 +1574,40 @@ mod tests {
             ConnectionState::Disconnected { reason: "no MiSTer address set".into() }
         );
         assert_eq!(c.key_event(0x04, true), KeyResult::Ignored);
+    }
+
+    /// A screenshot of the demo picture. Needs a GPU (the renderer); with
+    /// KVMS_SCREENSHOT=path it's saved there to look at.
+    #[test]
+    #[ignore]
+    fn demo_screenshot() {
+        let (c, _events) = controller();
+        c.set_frame_output(Some(FrameOutput::new(|| {})));
+        c.attach_surface(NativeSurface::Offscreen, 640, 480, 1.0);
+        let p = crate::profiles::demo_host_profile();
+        c.save_profile(p.clone());
+        c.open(p.id);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let shot = loop {
+            match c.screenshot("2026-10-17 14:32:05".into()) {
+                Ok(shot) => break shot,
+                Err(e) if Instant::now() > deadline => panic!("{e}"),
+                Err(_) => thread::sleep(Duration::from_millis(50)),
+            }
+        };
+        assert!(shot.file_name.ends_with(" 2026-10-17 14.32.05.png"), "{}", shot.file_name);
+        c.set_screenshot_stamp(false);
+        let plain = c.screenshot("2026-10-17 14:32:05".into()).unwrap();
+        assert!(plain.height < shot.height);
+        let dir = std::env::temp_dir().join(format!("kvms-shots-{}", std::process::id()));
+        let a = c.save_screenshot("2026-10-17 14:32:05".into(), dir.display().to_string()).unwrap();
+        let b = c.save_screenshot("2026-10-17 14:32:05".into(), dir.display().to_string()).unwrap();
+        assert!(b.ends_with(" 14.32.05 (2).png"), "{a} then {b}");
+        let _ = std::fs::remove_dir_all(dir);
+        if let Ok(path) = std::env::var("KVMS_SCREENSHOT") {
+            std::fs::write(&path, &shot.png).unwrap();
+            std::fs::write(format!("{path}.plain.png"), &plain.png).unwrap();
+        }
     }
 
     /// A demo host: connected at once, its input written out, not sent.

@@ -1,5 +1,6 @@
 import AVFoundation
 import UIKit
+import UniformTypeIdentifiers
 
 /// UI-facing state for the app: the saved hosts and the one open session.
 /// The session logic lives in the core's Controller (as on the Mac); this
@@ -397,6 +398,45 @@ final class AppModel: ObservableObject {
 
     func zoom(by factor: Double) { core.zoomBy(factor: factor) }
     func resetZoom() { core.resetZoom() }
+
+    // MARK: - Screenshots
+
+    /// "Screenshot copied" (or why not) over the picture for a moment.
+    @Published private(set) var screenshotNotice: String?
+    private var noticeGeneration = 0
+
+    /// Screenshots get a bar with the core and the time.
+    var screenshotStamp: Bool {
+        get { core.screenshotStamp() }
+        set {
+            core.setScreenshotStamp(on: newValue)
+            objectWillChange.send()
+        }
+    }
+
+    /// The picture as it is now, onto the clipboard as a PNG.
+    func copyScreenshot() {
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let notice: String
+        do {
+            let shot = try core.screenshot(takenAt: format.string(from: Date()))
+            UIPasteboard.general.setData(shot.png, forPasteboardType: UTType.png.identifier)
+            notice = "Screenshot copied"
+        } catch ControllerError.Failed(let message) {
+            notice = "No screenshot: \(message)"
+        } catch {
+            notice = "No screenshot: \(error.localizedDescription)"
+        }
+        noticeGeneration += 1
+        let generation = noticeGeneration
+        screenshotNotice = notice
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self, self.noticeGeneration == generation else { return }
+            self.screenshotNotice = nil
+        }
+    }
     /// Pan by a fraction of the picture.
     func pan(dx: Double, dy: Double) { core.panBy(dx: dx, dy: dy) }
 

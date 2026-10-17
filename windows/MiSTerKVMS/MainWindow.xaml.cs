@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
     /// changes from that don't open or close hosts.</summary>
     private bool _updatingList;
     private readonly DispatcherTimer _hintTimer = new() { Interval = TimeSpan.FromSeconds(4) };
+    private readonly DispatcherTimer _noticeTimer = new() { Interval = TimeSpan.FromSeconds(2.5) };
 
     public MainWindow()
     {
@@ -37,6 +38,8 @@ public sealed partial class MainWindow : Window
 
         _core.Event += e => DispatcherQueue.TryEnqueue(() => OnCoreEvent(e));
         _hintTimer.Tick += (_, _) => { _hintTimer.Stop(); CaptureHint.Visibility = Visibility.Collapsed; };
+        _noticeTimer.Tick += (_, _) => { _noticeTimer.Stop(); ShotNotice.Visibility = Visibility.Collapsed; };
+        StampButton.IsChecked = _core.Call<bool>("screenshotStamp");
         Root.Loaded += (_, _) =>
         {
             _video = new VideoSurface(_core, VideoHost);
@@ -120,6 +123,8 @@ public sealed partial class MainWindow : Window
         RecordIcon.Glyph = recording ? "" : "";
         RecordIcon.Foreground = recording ? new SolidColorBrush(Colors.Red) : null;
         RecordButton.IsEnabled = recording || videoUp;
+        CopyShotButton.IsEnabled = videoUp;
+        SaveShotButton.IsEnabled = videoUp;
         MuteButton.IsChecked = s.Muted;
         MuteIcon.Glyph = s.Muted ? "" : "";
         PinStatsButton.IsChecked = s.StatsPinned;
@@ -613,6 +618,76 @@ public sealed partial class MainWindow : Window
             Process.Start("explorer.exe", $"/select,\"{path}\"");
     }
 
+    // MARK: Screenshots
+
+    private static readonly string ScreenshotFolder =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "MiSTerKVMS");
+
+    /// <summary>Local time, as it goes in the picture and the file name.</summary>
+    private static string ScreenshotTime() => DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
+    private void CopyScreenshot_Click(object sender, RoutedEventArgs e) => _ = CopyScreenshot();
+    private void SaveScreenshot_Click(object sender, RoutedEventArgs e) => SaveScreenshot();
+
+    /// <summary>The picture as it is now, onto the clipboard. The core writes
+    /// the PNG to a temporary folder (emptied each time) and the clipboard
+    /// takes it from there.</summary>
+    private async Task CopyScreenshot()
+    {
+        if (_state.VideoStats?.State != "connected") return;
+        try
+        {
+            var temp = Path.Combine(Path.GetTempPath(), "MiSTerKVMS screenshot");
+            if (Directory.Exists(temp))
+                foreach (var old in Directory.GetFiles(temp))
+                    try { File.Delete(old); } catch (IOException) { }
+            var path = _core.Call<string>("saveScreenshot", new { takenAt = ScreenshotTime(), folder = temp });
+            var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
+            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            package.SetBitmap(Windows.Storage.Streams.RandomAccessStreamReference.CreateFromFile(file));
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+            Windows.ApplicationModel.DataTransfer.Clipboard.Flush();
+            ShowNotice("Screenshot copied");
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"screenshot: {ex.Message}");
+            ShowNotice($"No screenshot: {ex.Message}");
+        }
+    }
+
+    /// <summary>The picture as it is now, into Pictures\MiSTerKVMS.</summary>
+    private void SaveScreenshot()
+    {
+        if (_state.VideoStats?.State != "connected") return;
+        try
+        {
+            var path = _core.Call<string>("saveScreenshot", new { takenAt = ScreenshotTime(), folder = ScreenshotFolder });
+            ShowNotice($"Saved {Path.GetFileName(path)}");
+        }
+        catch (CoreException ex)
+        {
+            ShowNotice($"Not saved: {ex.Message}");
+        }
+    }
+
+    private void ShowScreenshots_Click(object sender, RoutedEventArgs e)
+    {
+        Directory.CreateDirectory(ScreenshotFolder);
+        Process.Start("explorer.exe", $"\"{ScreenshotFolder}\"");
+    }
+
+    private void Stamp_Click(object sender, RoutedEventArgs e) =>
+        _core.Call("setScreenshotStamp", new { on = StampButton.IsChecked == true });
+
+    private void ShowNotice(string text)
+    {
+        ShotNoticeText.Text = text;
+        ShotNotice.Visibility = Visibility.Visible;
+        _noticeTimer.Stop();
+        _noticeTimer.Start();
+    }
+
     // MARK: App menu
 
     private async void Export_Click(object sender, RoutedEventArgs e)
@@ -668,6 +743,8 @@ public sealed partial class MainWindow : Window
         Add(VirtualKey.V, CtrlShift, () => _ = TypeTextAsync());
         Add(VirtualKey.I, CtrlShift, TogglePin);
         Add(VirtualKey.R, CtrlShift, () => _ = ToggleRecording());
+        Add(VirtualKey.C, CtrlShift, () => _ = CopyScreenshot());
+        Add(VirtualKey.S, CtrlShift, SaveScreenshot);
         Add(VirtualKey.M, CtrlShift, () => _core.Call("setMuted", new { muted = !_state.Muted }));
         Add((VirtualKey)187, Ctrl, () => _core.Call("zoomBy", new { factor = 1.25 }));     // =
         Add(VirtualKey.Add, Ctrl, () => _core.Call("zoomBy", new { factor = 1.25 }));

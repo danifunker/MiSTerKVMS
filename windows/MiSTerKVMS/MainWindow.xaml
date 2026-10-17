@@ -92,6 +92,14 @@
                 <AppBarButton Icon="ZoomIn" Label="Zoom in" LabelPosition="Collapsed" Click="ZoomIn_Click"
                               ToolTipService.ToolTip="Zoom in (Ctrl+=)" />
                 <AppBarSeparator />
+                <AppBarButton x:Name="CopyShotButton" Label="Copy screenshot" LabelPosition="Collapsed" Click="CopyScreenshot_Click"
+                              ToolTipService.ToolTip="Copy the picture to the clipboard (Ctrl+Shift+C)">
+                    <AppBarButton.Icon><FontIcon Glyph="&#xE722;" /></AppBarButton.Icon>
+                </AppBarButton>
+                <AppBarButton x:Name="SaveShotButton" Label="Save screenshot" LabelPosition="Collapsed" Click="SaveScreenshot_Click"
+                              ToolTipService.ToolTip="Save the picture to Pictures\MiSTerKVMS (Ctrl+Shift+S)">
+                    <AppBarButton.Icon><FontIcon Glyph="&#xE74E;" /></AppBarButton.Icon>
+                </AppBarButton>
                 <AppBarButton x:Name="RecordButton" Label="Record" Click="Record_Click"
                               ToolTipService.ToolTip="Record video and audio to Videos\MiSTerKVMS (Ctrl+Shift+R)">
                     <AppBarButton.Icon><FontIcon x:Name="RecordIcon" Glyph="&#xE7C8;" /></AppBarButton.Icon>
@@ -143,6 +151,9 @@
                     <AppBarButton x:Name="ShowRecordingButton" Label="Show last recording" Click="ShowRecording_Click">
                         <AppBarButton.Icon><FontIcon Glyph="&#xE8B7;" /></AppBarButton.Icon>
                     </AppBarButton>
+                    <AppBarButton Label="Show screenshots" Click="ShowScreenshots_Click">
+                        <AppBarButton.Icon><FontIcon Glyph="&#xE91B;" /></AppBarButton.Icon>
+                    </AppBarButton>
                 </CommandBar.SecondaryCommands>
             </CommandBar>
 
@@ -154,6 +165,10 @@
                     <AppBarButton Label="Import hosts…" Click="Import_Click">
                         <AppBarButton.Icon><FontIcon Glyph="&#xE8B5;" /></AppBarButton.Icon>
                     </AppBarButton>
+                    <AppBarToggleButton x:Name="StampButton" Label="Core and time on screenshots" Click="Stamp_Click"
+                                        ToolTipService.ToolTip="A bar under each screenshot says which core was running and when">
+                        <AppBarToggleButton.Icon><FontIcon Glyph="&#xE722;" /></AppBarToggleButton.Icon>
+                    </AppBarToggleButton>
                     <AppBarButton Label="Viewer name…" Click="ViewerName_Click">
                         <AppBarButton.Icon><FontIcon Glyph="&#xE77B;" /></AppBarButton.Icon>
                     </AppBarButton>
@@ -207,6 +222,16 @@
                                    MaxWidth="420" />
                         <Button x:Name="TakeControlButton" Content="Take control" Click="TakeControl_Click"
                                 Style="{StaticResource AccentButtonStyle}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- "Screenshot copied" and the like, for a moment. -->
+                <Border x:Name="ShotNotice" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="12"
+                        Padding="14,8" CornerRadius="16" Background="#BF000000" IsHitTestVisible="False"
+                        Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE722;" FontSize="14" Foreground="White" VerticalAlignment="Center" />
+                        <TextBlock x:Name="ShotNoticeText" Foreground="White" VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
 

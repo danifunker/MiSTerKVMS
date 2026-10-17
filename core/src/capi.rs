@@ -255,6 +255,14 @@ fn call(c: &Arc<Controller>, r: Value) -> Result<Value, String> {
             c.set_stats_pinned(arg(&r, "pinned")?);
             done
         }
+        "screenshotStamp" => Ok(json!(c.screenshot_stamp())),
+        "setScreenshotStamp" => {
+            c.set_screenshot_stamp(arg(&r, "on")?);
+            done
+        }
+        // Saves the PNG in `folder` (a temporary one for the clipboard);
+        // the reply is its path.
+        "saveScreenshot" => c.save_screenshot(arg(&r, "takenAt")?, arg(&r, "folder")?).map(|p| json!(p)).map_err(|e| e.to_string()),
         "startRecording" => c.start_recording(arg(&r, "path")?).map(|_| Value::Null).map_err(|e| e.to_string()),
         "stopRecording" => {
             c.stop_recording();

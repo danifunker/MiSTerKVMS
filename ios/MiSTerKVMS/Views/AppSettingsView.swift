@@ -7,6 +7,7 @@ struct AppSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var demo = false
+    @State private var stamp = true
 
     var body: some View {
         NavigationStack {
@@ -23,6 +24,11 @@ struct AppSettingsView: View {
                     Toggle("Demo mode", isOn: $demo)
                 } footer: {
                     Text("Adds a Demo host to the list: a test pattern with sound instead of a MiSTer, and everything you type or tap listed on screen. For trying the app without a MiSTer; your MiSTers aren't affected.")
+                }
+                Section {
+                    Toggle("Core and time on screenshots", isOn: $stamp)
+                } footer: {
+                    Text("The screenshot button (a camera on a clipboard) copies the picture. With this on, a bar under it says which core was running and when.")
                 }
                 Section("About") {
                     LabeledContent("Version", value: version)
@@ -50,6 +56,7 @@ struct AppSettingsView: View {
                     Button("Done") {
                         model.deviceName = name
                         if demo != model.demoMode { model.demoMode = demo }
+                        if stamp != model.screenshotStamp { model.screenshotStamp = stamp }
                         dismiss()
                     }
                 }
@@ -57,6 +64,7 @@ struct AppSettingsView: View {
             .onAppear {
                 name = model.deviceNameIsDefault ? "" : model.deviceName
                 demo = model.demoMode
+                stamp = model.screenshotStamp
             }
         }
     }

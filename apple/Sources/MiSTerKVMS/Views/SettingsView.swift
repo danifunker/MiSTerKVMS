@@ -19,6 +19,11 @@ struct SettingsView: View {
                 Text("Flashes the stats overlay for a few seconds when a session connects, drops or changes resolution. They're always one ⌘I away, or pinned with ⇧⌘I.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section {
+                Toggle("Put the core and time under screenshots", isOn: $controller.screenshotStamp)
+                Text("Copy Screenshot (⇧⌘C) and Save Screenshot (⇧⌘S) add a bar under the picture saying which core was running and when. Saved screenshots go to Pictures/MiSTerKVMS.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             #if !APP_STORE
             CaptureServerSettings()
             #endif

@@ -264,6 +264,84 @@ final class SessionController: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([lastRecording])
     }
 
+    // MARK: - Screenshots
+
+    /// A short message over the picture ("Screenshot copied"); it goes away
+    /// by itself.
+    @Published private(set) var screenshotNotice: String?
+    private var noticeGeneration = 0
+
+    /// Where Save Screenshot puts them.
+    static let screenshotFolder = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("MiSTerKVMS", isDirectory: true)
+
+    /// There's a picture to take.
+    var canScreenshot: Bool { videoStats?.state == "connected" }
+
+    /// Screenshots get a bar with the core and the time.
+    var screenshotStamp: Bool {
+        get { core.screenshotStamp() }
+        set {
+            core.setScreenshotStamp(on: newValue)
+            objectWillChange.send()
+        }
+    }
+
+    /// The picture as it is now, onto the clipboard (PNG, and TIFF for apps
+    /// that only take that).
+    func copyScreenshot() {
+        do {
+            let shot = try core.screenshot(takenAt: Self.screenshotTime())
+            let board = NSPasteboard.general
+            board.declareTypes([.png, .tiff], owner: nil)
+            board.setData(shot.png, forType: .png)
+            if let tiff = NSImage(data: shot.png)?.tiffRepresentation {
+                board.setData(tiff, forType: .tiff)
+            }
+            showNotice("Screenshot copied")
+        } catch {
+            showNotice("No screenshot: \(Self.message(error))")
+        }
+    }
+
+    /// The picture as it is now, into Pictures/MiSTerKVMS.
+    func saveScreenshot() {
+        do {
+            let path = try core.saveScreenshot(takenAt: Self.screenshotTime(), folder: Self.screenshotFolder.path)
+            showNotice("Saved \(URL(fileURLWithPath: path).lastPathComponent)")
+        } catch {
+            showNotice("Not saved: \(Self.message(error))")
+        }
+    }
+
+    func showScreenshots() {
+        try? FileManager.default.createDirectory(at: Self.screenshotFolder, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(Self.screenshotFolder)
+    }
+
+    private func showNotice(_ text: String) {
+        noticeGeneration += 1
+        let generation = noticeGeneration
+        screenshotNotice = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            guard let self, self.noticeGeneration == generation else { return }
+            self.screenshotNotice = nil
+        }
+    }
+
+    /// Local time, as it goes in the picture and the file name.
+    private static func screenshotTime() -> String {
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return format.string(from: Date())
+    }
+
+    private static func message(_ error: Error) -> String {
+        if case let ControllerError.Failed(message) = error { return message }
+        return error.localizedDescription
+    }
+
     // MARK: - Input
 
     /// Capture keyboard and mouse. On a stream someone else controls, only

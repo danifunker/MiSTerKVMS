@@ -18,5 +18,8 @@
 	<!-- Recordings go to Movies/MiSTerKVMS. -->
 	<key>com.apple.security.assets.movies.read-write</key>
 	<true/>
+	<!-- Saved screenshots go to Pictures/MiSTerKVMS. -->
+	<key>com.apple.security.assets.pictures.read-write</key>
+	<true/>
 </dict>
 </plist>

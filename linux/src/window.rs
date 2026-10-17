@@ -174,12 +174,14 @@ impl Ui {
         session_section.append(Some("Type Text…"), Some("win.type-text"));
         session_section.append(Some("Edit Host…"), Some("win.edit-host"));
         session_section.append(Some("Show Last Recording"), Some("win.show-recording"));
+        session_section.append(Some("Show Screenshots"), Some("win.show-screenshots"));
         main_menu.append_section(None, &session_section);
         let stats_section = gio::Menu::new();
         stats_section.append(Some("Show Stats"), Some("win.show-stats"));
         stats_section.append(Some("Pin Stats Overlay"), Some("win.pin-stats"));
         main_menu.append_section(None, &stats_section);
         let app_section = gio::Menu::new();
+        app_section.append(Some("Core and Time on Screenshots"), Some("win.screenshot-stamp"));
         app_section.append(Some("Export Hosts…"), Some("win.export"));
         app_section.append(Some("Import Hosts…"), Some("win.import"));
         app_section.append(Some("About MiSTerKVMS"), Some("win.about"));
@@ -219,6 +221,12 @@ impl Ui {
         zoom_box.append(&zoom_label);
         zoom_box.append(&zoom_in);
 
+        let copy_shot = gtk::Button::from_icon_name("camera-photo-symbolic");
+        copy_shot.set_action_name(Some("win.copy-screenshot"));
+        copy_shot.set_tooltip_text(Some("Copy the picture to the clipboard (Ctrl+Shift+C)"));
+        let save_shot = gtk::Button::from_icon_name("document-save-symbolic");
+        save_shot.set_action_name(Some("win.save-screenshot"));
+        save_shot.set_tooltip_text(Some("Save the picture to Pictures/MiSTerKVMS (Ctrl+Shift+S)"));
         let record_button = gtk::Button::from_icon_name("media-record-symbolic");
         record_button.set_action_name(Some("win.record"));
         let mute_button = gtk::ToggleButton::new();
@@ -228,6 +236,8 @@ impl Ui {
         header.pack_end(&main_menu_button);
         header.pack_end(&mute_button);
         header.pack_end(&record_button);
+        header.pack_end(&save_shot);
+        header.pack_end(&copy_shot);
         header.pack_end(&zoom_box);
         header.pack_end(&view_button);
 
@@ -554,6 +564,21 @@ impl Ui {
                 gtk::FileLauncher::new(Some(&file)).open_containing_folder(Some(&ui.window), gio::Cancellable::NONE, |_| {});
             }
         });
+        simple("copy-screenshot", |ui| ui.copy_screenshot());
+        simple("save-screenshot", |ui| ui.save_screenshot());
+        simple("show-screenshots", |ui| {
+            let dir = screenshot_dir();
+            let _ = std::fs::create_dir_all(&dir);
+            gtk::FileLauncher::new(Some(&gio::File::for_path(&dir))).launch(Some(&ui.window), gio::Cancellable::NONE, |_| {});
+        });
+        let stamp = gio::SimpleAction::new_stateful("screenshot-stamp", None, &self.core.screenshot_stamp().to_variant());
+        stamp.connect_activate(|action, _| {
+            let Some(ui) = ui() else { return };
+            let on = !action.state().and_then(|s| s.get::<bool>()).unwrap_or(true);
+            ui.core.set_screenshot_stamp(on);
+            action.set_state(&on.to_variant());
+        });
+        w.add_action(&stamp);
         simple("export", |ui| ui.export_profiles());
         simple("import", |ui| ui.import_profiles());
         simple("about", |ui| crate::about::show(&ui.window));
@@ -588,6 +613,8 @@ impl Ui {
             ("win.show-stats", &["<Control>i"]),
             ("win.pin-stats", &["<Control><Shift>i"]),
             ("win.record", &["<Control><Shift>r"]),
+            ("win.copy-screenshot", &["<Control><Shift>c"]),
+            ("win.save-screenshot", &["<Control><Shift>s"]),
             ("win.mute", &["<Control><Shift>m"]),
             ("win.zoom-in", &["<Control>equal", "<Control>plus", "<Control>KP_Add"]),
             ("win.zoom-out", &["<Control>minus", "<Control>KP_Subtract"]),
@@ -717,6 +744,8 @@ impl Ui {
         set_enabled("capture", connected || s.capturing);
         set_enabled("record", s.recording_seconds.is_some() || video_up);
         set_enabled("show-recording", s.last_recording.is_some());
+        set_enabled("copy-screenshot", video_up);
+        set_enabled("save-screenshot", video_up);
         let set_state = |name: &str, v: glib::Variant| {
             if let Some(a) = self.window.lookup_action(name).and_then(|a| a.downcast::<gio::SimpleAction>().ok()) {
                 a.set_state(&v);
@@ -1137,9 +1166,47 @@ impl Ui {
         }
     }
 
+    // MARK: Screenshots
+
+    /// The picture as it is now, onto the clipboard.
+    fn copy_screenshot(&self) {
+        let shot = match self.core.screenshot(screenshot_time()) {
+            Ok(shot) => shot,
+            Err(e) => return self.toast(&format!("No screenshot: {e}")),
+        };
+        match gdk::Texture::from_bytes(&glib::Bytes::from_owned(shot.png)) {
+            Ok(texture) => {
+                self.window.clipboard().set_texture(&texture);
+                self.toast("Screenshot copied");
+            }
+            Err(e) => self.toast(&format!("No screenshot: {e}")),
+        }
+    }
+
+    /// The picture as it is now, into Pictures/MiSTerKVMS.
+    fn save_screenshot(&self) {
+        match self.core.save_screenshot(screenshot_time(), screenshot_dir().display().to_string()) {
+            Ok(path) => {
+                let name = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(path);
+                self.toast(&format!("Saved {name}"));
+            }
+            Err(e) => self.toast(&format!("Not saved: {e}")),
+        }
+    }
+
     pub fn toast(&self, message: &str) {
         self.toasts.add_toast(adw::Toast::new(message));
     }
+}
+
+/// Where Save Screenshot puts them.
+fn screenshot_dir() -> std::path::PathBuf {
+    glib::user_special_dir(glib::UserDirectory::Pictures).unwrap_or_else(glib::home_dir).join("MiSTerKVMS")
+}
+
+/// Local time, as it goes in the picture and the file name.
+fn screenshot_time() -> String {
+    glib::DateTime::now_local().and_then(|t| t.format("%Y-%m-%d %H:%M:%S")).map(|s| s.to_string()).unwrap_or_default()
 }
 
 /// A key from the window's key controller. While capturing it goes to
