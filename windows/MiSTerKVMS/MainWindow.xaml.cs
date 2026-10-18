@@ -99,7 +99,7 @@ public sealed partial class MainWindow : Window
         HostList.ItemsSource = _items;
         HostList.SelectedItem = _items.FirstOrDefault(i => i.Id == _state.ProfileId);
         _updatingList = false;
-        NoHosts.Visibility = _profiles.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RenderPlaceholder(OpenProfile, _state, _state.VideoStats?.State == "connected");
         SizePictures();
         LoadPreviews();
     }
@@ -187,11 +187,15 @@ public sealed partial class MainWindow : Window
     {
         Placeholder.Visibility = videoUp ? Visibility.Collapsed : Visibility.Visible;
         PlaceholderHint.Visibility = s.IsConnected && !s.Capturing ? Visibility.Visible : Visibility.Collapsed;
+        // No hosts yet: what to do goes here, not in the empty host list.
+        PlaceholderAdd.Visibility = profile == null && _profiles.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (profile == null)
         {
             PlaceholderIcon.Glyph = "";
-            PlaceholderTitle.Text = _profiles.Count == 0 ? "Add a host to get started" : "Select a host";
-            PlaceholderDetail.Text = _profiles.Count == 0 ? "" : "Choose a MiSTer on the left to connect.";
+            PlaceholderTitle.Text = _profiles.Count == 0 ? "No hosts" : "Select a host";
+            PlaceholderDetail.Text = _profiles.Count == 0
+                ? "Add a MiSTer: a stream from MiSTerKVMS Capture, or a capture card on this PC."
+                : "Choose a MiSTer on the left to connect.";
             return;
         }
         PlaceholderIcon.Glyph = "";

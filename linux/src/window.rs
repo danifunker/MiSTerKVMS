@@ -96,7 +96,8 @@ pub struct Ui {
     toasts: adw::ToastOverlay,
     host_list: gtk::ListBox,
     rows: RefCell<HashMap<String, HostRow>>,
-    sidebar_stack: gtk::Stack,
+    /// No hosts yet: what to do, in the session area (the list stays empty).
+    no_hosts: adw::StatusPage,
     profiles: RefCell<Vec<HostProfile>>,
     state: RefCell<ControllerState>,
     /// Set while the host list is refilled, so that doesn't open hosts.
@@ -166,19 +167,16 @@ impl Ui {
         add_first.set_action_name(Some("win.add-host"));
         add_first.set_halign(gtk::Align::Center);
         add_first.add_css_class("pill");
-        let empty = adw::StatusPage::builder()
+        let no_hosts = adw::StatusPage::builder()
             .icon_name("video-display-symbolic")
             .title("No Hosts")
             .description("Add a MiSTer and the capture server stream that carries its video.")
             .child(&add_first)
+            .visible(false)
             .build();
-        empty.add_css_class("compact");
-        let sidebar_stack = gtk::Stack::new();
-        sidebar_stack.add_named(&gtk::ScrolledWindow::builder().child(&host_list).vexpand(true).build(), Some("list"));
-        sidebar_stack.add_named(&empty, Some("empty"));
         let sidebar = adw::ToolbarView::new();
         sidebar.add_top_bar(&sidebar_header);
-        sidebar.set_content(Some(&sidebar_stack));
+        sidebar.set_content(Some(&gtk::ScrolledWindow::builder().child(&host_list).vexpand(true).build()));
 
         // Header bar.
         let title = adw::WindowTitle::new("MiSTerKVMS", "");
@@ -319,6 +317,7 @@ impl Ui {
         overlay.add_css_class("video-area");
         overlay.set_child(Some(&video));
         overlay.add_overlay(&placeholder);
+        overlay.add_overlay(&no_hosts);
         overlay.add_overlay(&capture_hint);
         overlay.add_overlay(&stats_box);
 
@@ -386,7 +385,7 @@ impl Ui {
             toasts,
             host_list,
             rows: RefCell::new(HashMap::new()),
-            sidebar_stack,
+            no_hosts,
             profiles: RefCell::new(Vec::new()),
             state: RefCell::new(ControllerState {
                 profile_id: None,
@@ -792,7 +791,7 @@ impl Ui {
             }
         }
         self.updating_list.set(false);
-        self.sidebar_stack.set_visible_child_name(if profiles.is_empty() { "empty" } else { "list" });
+        self.no_hosts.set_visible(profiles.is_empty());
         *self.profiles.borrow_mut() = profiles;
         *self.rows.borrow_mut() = rows;
         self.add_row_actions();
@@ -963,7 +962,8 @@ impl Ui {
     }
 
     fn render_placeholder(&self, profile: Option<&HostProfile>, s: &ControllerState, video_up: bool) {
-        self.placeholder.set_visible(!video_up);
+        // With no hosts the No Hosts page says what to do instead.
+        self.placeholder.set_visible(!video_up && (profile.is_some() || !self.profiles.borrow().is_empty()));
         let connected = s.connection == ConnectionState::Connected;
         let hint = match (connected && !s.capturing, self.core.capture_automatically()) {
             (false, _) => "",

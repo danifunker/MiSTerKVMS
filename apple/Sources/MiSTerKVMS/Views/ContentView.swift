@@ -42,18 +42,6 @@ struct ContentView: View {
                     .help("Add a host (hold for the demo host)")
                 }
             }
-            .overlay {
-                if profiles.profiles.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Hosts", systemImage: "display.2")
-                    } description: {
-                        Text("Add a MiSTer: a stream from MiSTerKVMS Capture, or a capture card on this Mac.")
-                    } actions: {
-                        Button("Add Host…") { editing = HostProfile.make() }
-                        Button("Try Without a MiSTer") { addDemo() }
-                    }
-                }
-            }
         } detail: {
             // The banner belongs to the detail column; on the whole split view
             // it would draw over the sidebar.
@@ -63,6 +51,17 @@ struct ContentView: View {
                 #endif
                 if let profile = controller.profile {
                     SessionView(profile: profile, onEdit: { editing = profile })
+                } else if profiles.profiles.isEmpty {
+                    // No hosts yet: what to do goes here, not in the empty sidebar.
+                    ContentUnavailableView {
+                        Label("No Hosts", systemImage: "display.2")
+                    } description: {
+                        Text("Add a MiSTer: a stream from MiSTerKVMS Capture, or a capture card on this Mac.")
+                    } actions: {
+                        Button("Add Host…") { editing = HostProfile.make() }
+                        Button("Try Without a MiSTer") { addDemo() }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ContentUnavailableView("Select a Host", systemImage: "sidebar.left",
                                            description: Text("Choose a MiSTer in the sidebar to connect."))

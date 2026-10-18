@@ -55,14 +55,6 @@
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
-            <StackPanel x:Name="NoHosts" Grid.Row="1" VerticalAlignment="Center" Spacing="8" Padding="16"
-                        Visibility="Collapsed">
-                <FontIcon Glyph="&#xE7F4;" FontSize="36" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                <TextBlock Text="No hosts" HorizontalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                <TextBlock Text="Add a MiSTer: a stream from MiSTerKVMS Capture, or a capture card on this PC." TextWrapping="Wrap"
-                           TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                <Button Content="Add host…" HorizontalAlignment="Center" Click="AddHost_Click" />
-            </StackPanel>
         </Grid>
 
         <!-- Session -->
@@ -220,8 +212,10 @@
                   PointerPressed="Video_PointerPressed" PointerWheelChanged="Video_PointerWheelChanged">
                 <Grid x:Name="VideoHost" />
 
+                <!-- Clicks on it still reach VideoArea (they bubble); only
+                     the Add host button keeps its own. -->
                 <StackPanel x:Name="Placeholder" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8"
-                            IsHitTestVisible="False" MaxWidth="460">
+                            MaxWidth="460">
                     <FontIcon x:Name="PlaceholderIcon" Glyph="&#xE7F4;" FontSize="48" Foreground="#99FFFFFF" />
                     <TextBlock x:Name="PlaceholderTitle" Foreground="White" HorizontalAlignment="Center"
                                Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" TextAlignment="Center" />
@@ -229,6 +223,8 @@
                                Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" TextAlignment="Center" />
                     <TextBlock x:Name="PlaceholderHint" Foreground="White" HorizontalAlignment="Center" Margin="0,12,0,0"
                                Text="Click here to capture keyboard and mouse" />
+                    <Button x:Name="PlaceholderAdd" Content="Add host…" HorizontalAlignment="Center" Margin="0,12,0,0"
+                            Click="AddHost_Click" Visibility="Collapsed" />
                 </StackPanel>
 
                 <Border x:Name="CaptureHint" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="12"
