@@ -55,11 +55,11 @@ Every tool also takes `host`, `mister`, `stream`, `local`, `local_audio` and `se
 | `frames` | `duration` (required), `dir` (required), `all` (bool: repeated frames too), `full` (bool) | JSON: dir, frames_seen, saved, width, height | `frames <duration> <dir> [--all] [--full]` |
 | `type` | `text` (required; `\n` Enter, `\t` Tab, `\e` Esc, `\b` Backspace), `delay` (ms between keys), `hold` (ms each key is held) | JSON: typed, skipped | `type <text> [--delay] [--hold]` |
 | `key` | `combo` (required: `F12`, `enter`, `ctrl+alt+del`, `shift+a`, `menu`), `hold` (ms, default 80) | JSON: pressed | `key <combo> [--hold]` |
-| `mouse` | `action` (required: `move`, `click`, `down`, `up`, `pos`); `dx`, `dy` (move, pixels); `button` (click/down/up: `left`, `right`, `middle`; default left); `x`, `y` (pos, 0-1000 per mille) | JSON: ok | `mouse move <dx> <dy>`, `mouse click\|down\|up [button]`, `mouse pos <x> <y>` |
+| `mouse` | `action` (required: `move`, `click`, `down`, `up`, `pos`); `dx`, `dy` (move, pixels; any size, sent as several packets of at most 127); `button` (click/down/up: `left`, `right`, `middle`; default left); `x`, `y` (pos, 0-1000 per mille) | JSON: ok | `mouse move <dx> <dy>`, `mouse click\|down\|up [button]`, `mouse pos <x> <y>` |
 | `wait_for_change` | `timeout` (default 10s), `until_still` (wait for the picture to settle this long instead), `min_pixels` (default 50), `full` (bool) | JSON: changed or still, timed_out, after_ms | `wait-for-change [--timeout] [--until-still] [--min-pixels] [--full]` |
 | `stream` | `address` (required, `mkvm://host/stream`), `duration` (default 5s), `max` (`WIDTHxHEIGHT`), `fps`, `quality` (1-100), `save` (path for the last picture as PNG) | JSON: what arrived: fps, size, bandwidth, latency | `stream <address> [--duration] [--max] [--fps] [--quality] [--save]` |
 | `streams` | `wait` (default 2s) | JSON: streams [{name, address, mister, ...}] | `streams [--wait]` |
-| `load_core` | `rbf` (required, a .rbf on this computer), `dest` (folder on the MiSTer, default `/media/fat/_Development` or `core_dest`) | JSON: loaded (the path on the MiSTer) | `load-core <rbf> [--dest]` |
+| `load_core` | `rbf` (required, a .rbf on this computer, or a .mgl whose core and files are already on the MiSTer), `dest` (folder on the MiSTer, default `/media/fat/_Development` or `core_dest`) | JSON: loaded (the path on the MiSTer) | `load-core <rbf> [--dest]` |
 
 Not tools: `soak` (an hours-long memory test that prints a line every few seconds) and `mcp` itself.
 

@@ -165,7 +165,9 @@ enum Cmd {
     /// Serve these commands as tools for AI agents: an MCP server on
     /// stdin/stdout (see docs/MCP.md).
     Mcp,
-    /// Copy a core (.rbf) to the MiSTer over SSH and load it.
+    /// Copy a core (.rbf) to the MiSTer over SSH and load it. A .mgl works
+    /// too (loads its core and mounts its files in one step); the files it
+    /// names must already be on the MiSTer.
     LoadCore {
         rbf: PathBuf,
         /// Folder on the MiSTer (default /media/fat/_Development, or core_dest in settings).
@@ -614,10 +616,13 @@ fn load_core(s: &Settings, rbf: &Path, dest: Option<String>) -> Result<Value, St
         ok.then_some(()).ok_or_else(|| format!("ssh {target}: '{cmd}' failed"))
     };
     ssh(&format!("mkdir -p {}", quote(&dest)))?;
-    let ok = std::process::Command::new("scp")
-        .args(["-q", "-o", "BatchMode=yes"])
-        .arg(rbf)
-        .arg(format!("{target}:{}", quote(&remote)))
+    // Through ssh, not scp: newer scp (SFTP) doesn't pass the path through
+    // a shell, so quotes would end up in the file name.
+    let file = std::fs::File::open(rbf).map_err(|e| format!("{}: {e}", rbf.display()))?;
+    let ok = std::process::Command::new("ssh")
+        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", &target])
+        .arg(format!("cat > {}", quote(&remote)))
+        .stdin(file)
         .status()
         .map_err(|e| e.to_string())?
         .success();

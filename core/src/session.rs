@@ -387,6 +387,27 @@ impl LinkWorker {
     }
 }
 
+/// Largest move in one mouseMove. Each is one PS/2 packet on the MiSTer,
+/// which carries at most ±255, and cores that read only 8 bits ±127.
+const MAX_MOVE: i32 = 127;
+
+/// A move as mouseMoves of at most MAX_MOVE each way, along the same line,
+/// adding up to exactly (x, y). A bigger one would be cut short.
+fn split_move(x: i32, y: i32) -> Vec<(i32, i32)> {
+    let steps = (x.abs().max(y.abs()) + MAX_MOVE - 1) / MAX_MOVE;
+    let steps = steps.max(1);
+    let (mut sent_x, mut sent_y) = (0, 0);
+    (1..=steps)
+        .map(|i| {
+            let to_x = (x as f64 * i as f64 / steps as f64).round() as i32;
+            let to_y = (y as f64 * i as f64 / steps as f64).round() as i32;
+            let step = (to_x - sent_x, to_y - sent_y);
+            (sent_x, sent_y) = (to_x, to_y);
+            step
+        })
+        .collect()
+}
+
 fn flush_move(pending: &mut (f64, f64), batch: &mut Vec<InputCmd>) {
     if pending.0 != 0.0 || pending.1 != 0.0 {
         batch.push(InputCmd::Move { dx: pending.0, dy: pending.1 });
@@ -568,7 +589,10 @@ impl Worker {
         self.pending.0 -= x;
         self.pending.1 -= y;
         self.last_flush = Instant::now();
-        self.send(socket, format!("mouseMove:{},{}", x as i32, y as i32))
+        for (x, y) in split_move(x as i32, y as i32) {
+            self.send(socket, format!("mouseMove:{x},{y}"))?;
+        }
+        Ok(())
     }
 
     fn send(&self, socket: &mut Socket, msg: String) -> Result<(), String> {
@@ -577,5 +601,21 @@ impl Worker {
             .map_err(|e| format!("send: {e}"))?;
         self.counters.sent.fetch_add(1, Ordering::Relaxed);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn big_moves_go_as_several_packets() {
+        assert_eq!(split_move(5, -3), [(5, -3)]);
+        assert_eq!(split_move(127, -127), [(127, -127)]);
+        let steps = split_move(1000, -300);
+        assert!(steps.iter().all(|&(x, y)| x.abs() <= MAX_MOVE && y.abs() <= MAX_MOVE), "{steps:?}");
+        assert_eq!(steps.iter().fold((0, 0), |a, s| (a.0 + s.0, a.1 + s.1)), (1000, -300));
+        assert_eq!(steps.len(), 8);
+        assert_eq!(split_move(-128, 0), [(-64, 0), (-64, 0)]);
     }
 }
