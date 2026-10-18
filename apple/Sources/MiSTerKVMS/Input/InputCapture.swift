@@ -183,7 +183,11 @@ final class InputCapture {
             guard let usage = MacKeymap.hidUsage(forVirtualKey: vk) else { return }
             if let mask = MacKeymap.modifierMask(forVirtualKey: vk) {
                 let down = event.flags.rawValue & mask != 0
-                _ = session.keyEvent(hidUsage: usage, down: down)
+                // The release chord is two modifiers: capture ends when the
+                // last is let go, which arrives here, not as a keyUp.
+                if session.keyEvent(hidUsage: usage, down: down) == .exitCapture {
+                    DispatchQueue.main.async { [weak self] in self?.stop() }
+                }
             } else if vk == kVK_CapsLock {
                 // macOS reports Caps Lock as a toggle, not press/release.
                 session.tapKey(hidUsage: usage)
