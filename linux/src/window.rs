@@ -211,7 +211,7 @@ impl Ui {
         stats_section.append(Some("Pin Stats Overlay"), Some("win.pin-stats"));
         main_menu.append_section(None, &stats_section);
         let app_section = gio::Menu::new();
-        app_section.append(Some("Capture Automatically"), Some("win.auto-capture"));
+        app_section.append(Some("Capture When a Host Connects"), Some("win.auto-capture"));
         app_section.append(Some("Core and Time on Screenshots"), Some("win.screenshot-stamp"));
         app_section.append(Some("Export Hosts…"), Some("win.export"));
         app_section.append(Some("Import Hosts…"), Some("win.import"));
@@ -459,14 +459,11 @@ impl Ui {
             }
         });
 
-        // Click the video to capture (with Capture Automatically; without
-        // it a click only watches).
+        // Click the video to capture.
         let click = gtk::GestureClick::new();
         click.connect_pressed(|_, _, _, _| {
             if let Some(ui) = ui() {
-                if ui.core.capture_automatically() {
-                    ui.start_capture();
-                }
+                ui.start_capture();
             }
         });
         self.video.add_controller(click);
@@ -929,10 +926,8 @@ impl Ui {
         self.capture_button.set_icon_name(if s.capturing { "process-stop-symbolic" } else { "input-mouse-symbolic" });
         self.capture_button.set_tooltip_text(Some(if s.capturing {
             "Release keyboard and mouse (Right Super + Right Alt + Esc)"
-        } else if self.core.capture_automatically() {
-            "Send keyboard and mouse to MiSTer (or click the screen) — Ctrl+Shift+K"
         } else {
-            "Send keyboard and mouse to MiSTer — Ctrl+Shift+K"
+            "Send keyboard and mouse to MiSTer (or click the screen) — Ctrl+Shift+K"
         }));
         self.menu_button.set_sensitive(connected);
         self.info_button.set_sensitive(open);
@@ -965,11 +960,7 @@ impl Ui {
         // With no hosts the No Hosts page says what to do instead.
         self.placeholder.set_visible(!video_up && (profile.is_some() || !self.profiles.borrow().is_empty()));
         let connected = s.connection == ConnectionState::Connected;
-        let hint = match (connected && !s.capturing, self.core.capture_automatically()) {
-            (false, _) => "",
-            (true, true) => "\n\nClick here to capture keyboard and mouse",
-            (true, false) => "\n\nWatching. Capture (Ctrl+Shift+K) sends your keyboard and mouse to the MiSTer.",
-        };
+        let hint = if connected && !s.capturing { "\n\nClick here to capture keyboard and mouse" } else { "" };
         let (title, detail) = match profile {
             None if self.profiles.borrow().is_empty() => ("Add a host to get started".to_string(), String::new()),
             None => ("Select a Host".to_string(), "Choose a MiSTer in the sidebar to connect.".to_string()),
@@ -1203,14 +1194,14 @@ impl Ui {
         if self.asking_intro.replace(true) {
             return;
         }
-        let again = if self.core.capture_automatically() { "Clicking the picture" } else { "The Capture button (Ctrl+Shift+K)" };
         let dialog = adw::AlertDialog::new(
             Some("Your keyboard and mouse are about to go to the MiSTer"),
-            Some(&format!(
+            Some(
                 "The pointer disappears and everything you type goes to the MiSTer. To get them back, \
                  hold Right Super and Right Alt (right of the space bar) and press Esc. Switching to \
-                 another window also gets them back.\n\nF12 opens the MiSTer menu. {again} captures again."
-            )),
+                 another window also gets them back.\n\nF12 opens the MiSTer menu. Clicking the picture \
+                 captures again.",
+            ),
         );
         dialog.add_responses(&[("later", "Not Now"), ("capture", "Capture")]);
         dialog.set_response_appearance("capture", adw::ResponseAppearance::Suggested);

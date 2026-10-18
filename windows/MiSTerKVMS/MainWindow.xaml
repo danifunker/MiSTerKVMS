@@ -185,8 +185,8 @@
                     <AppBarButton Label="Import hosts…" Click="Import_Click">
                         <AppBarButton.Icon><FontIcon Glyph="&#xE8B5;" /></AppBarButton.Icon>
                     </AppBarButton>
-                    <AppBarToggleButton x:Name="AutoCaptureButton" Label="Capture automatically" Click="AutoCapture_Click"
-                                        ToolTipService.ToolTip="Capture keyboard and mouse when a host connects and when the picture is clicked. Off: just watch until you press Capture (Ctrl+Shift+K). MiSTerKVMS.exe --auto-capture turns it on for that run.">
+                    <AppBarToggleButton x:Name="AutoCaptureButton" Label="Capture when a host connects" Click="AutoCapture_Click"
+                                        ToolTipService.ToolTip="Capture keyboard and mouse as soon as a host connects. Off, a host connects for watching: click the picture or press Capture (Ctrl+Shift+K). MiSTerKVMS.exe --auto-capture turns it on for that run.">
                         <AppBarToggleButton.Icon><FontIcon Glyph="&#xE962;" /></AppBarToggleButton.Icon>
                     </AppBarToggleButton>
                     <AppBarToggleButton x:Name="StampButton" Label="Core and time on screenshots" Click="Stamp_Click"

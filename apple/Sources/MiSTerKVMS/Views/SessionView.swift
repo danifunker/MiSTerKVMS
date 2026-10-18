@@ -11,15 +11,13 @@ struct SessionView: View {
     @State private var showCaptureHint = false
 
     /// How to get out of capture, shown once before the first one.
-    static func captureIntro(clickCaptures: Bool) -> String {
-        """
+    static let captureIntro = """
         The pointer disappears and everything you type goes to the MiSTer. To get them back to your Mac, \
         hold Right ⌘ and Right ⌥ (right of the space bar) and press Esc. The Release button in the toolbar \
         does the same once you're back.
 
-        F12 opens the MiSTer menu. \(clickCaptures ? "Clicking the picture" : "The Capture button (⇧⌘K)") captures again.
+        F12 opens the MiSTer menu. Clicking the picture captures again.
         """
-    }
 
     var body: some View {
         ZStack {
@@ -67,7 +65,7 @@ struct SessionView: View {
                 .keyboardShortcut(.defaultAction)
             Button("Not Now", role: .cancel) { controller.captureIntroAnswered(capture: false) }
         } message: {
-            Text(Self.captureIntro(clickCaptures: controller.captureAutomatically))
+            Text(Self.captureIntro)
         }
         .navigationTitle(profile.name)
         .navigationSubtitle(controller.coreRunning.isEmpty ? profile.subtitle : controller.coreRunning)
@@ -92,9 +90,7 @@ struct SessionView: View {
                     }
                     .help(controller.someoneElseInControl
                           ? "Someone else has control: use Take Control in the banner"
-                          : controller.captureAutomatically
-                            ? "Send keyboard and mouse to MiSTer (⇧⌘K, or click the screen)"
-                            : "Send keyboard and mouse to MiSTer (⇧⌘K)")
+                          : "Send keyboard and mouse to MiSTer (⇧⌘K, or click the screen)")
                     .disabled(!controller.isConnected || controller.someoneElseInControl)
                 }
 
@@ -211,9 +207,7 @@ private struct VideoPlaceholder: View {
                     .multilineTextAlignment(.center).frame(maxWidth: 420)
             }
             if controller.isConnected && !controller.capturing && !controller.someoneElseInControl {
-                Text(controller.captureAutomatically
-                     ? "Click here to capture keyboard and mouse"
-                     : "Watching. Capture (⇧⌘K) sends your keyboard and mouse to the MiSTer.")
+                Text("Click here to capture keyboard and mouse")
                     .font(.callout).padding(.top, 12)
             }
         }
@@ -542,10 +536,7 @@ struct CaptureSurface: NSViewRepresentable {
 
         override func mouseDown(with event: NSEvent) {
             window?.makeFirstResponder(self)
-            // Without Capture automatically, a click only looks: the
-            // Capture button or ⇧⌘K captures.
-            guard let controller, controller.captureAutomatically else { return }
-            controller.startCapture()
+            controller?.startCapture()
         }
 
         // Only reached when not capturing (capture swallows these).

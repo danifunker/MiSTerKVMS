@@ -141,14 +141,9 @@ public sealed partial class MainWindow : Window
         CaptureButton.IsEnabled = connected || s.Capturing;
         CaptureButton.Label = s.Capturing ? "Release" : "Capture";
         CaptureIcon.Glyph = s.Capturing ? "" : "";
-        bool auto = _core.Call<bool>("captureAutomatically");
         ToolTipService.SetToolTip(CaptureButton, s.Capturing
             ? "Release keyboard and mouse (Right Win + Right Alt + Esc)"
-            : auto ? "Send keyboard and mouse to MiSTer (Ctrl+Shift+K, or click the screen)"
-            : "Send keyboard and mouse to MiSTer (Ctrl+Shift+K)");
-        PlaceholderHint.Text = auto
-            ? "Click here to capture keyboard and mouse"
-            : "Watching. Capture (Ctrl+Shift+K) sends your keyboard and mouse to the MiSTer.";
+            : "Send keyboard and mouse to MiSTer (Ctrl+Shift+K, or click the screen)");
         FitButton.IsChecked = s.Display.ScaleMode == ScaleMode.Fit;
         IntegerButton.IsChecked = s.Display.ScaleMode == ScaleMode.Integer;
         NativeButton.IsChecked = s.Display.ScaleMode == ScaleMode.Native;
@@ -457,9 +452,7 @@ public sealed partial class MainWindow : Window
                 Text = "The pointer disappears and everything you type goes to the MiSTer. To get them back, " +
                        "hold Right Win and Right Alt (right of the space bar) and press Esc.\n\n" +
                        "No Right Win key? Press Ctrl+Alt+Del, then Esc: that always gets them back.\n\n" +
-                       "F12 opens the MiSTer menu. " +
-                       (_core.Call<bool>("captureAutomatically") ? "Clicking the picture" : "The Capture button (Ctrl+Shift+K)") +
-                       " captures again.",
+                       "F12 opens the MiSTer menu. Clicking the picture captures again.",
             },
             PrimaryButtonText = "Capture",
             CloseButtonText = "Not now",
@@ -483,12 +476,9 @@ public sealed partial class MainWindow : Window
         else StartCapture();
     }
 
-    /// <summary>Clicking the picture captures only with Capture
-    /// automatically; otherwise it just watches.</summary>
     private void Video_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        if (e.GetCurrentPoint(VideoArea).Properties.IsLeftButtonPressed && _core.Call<bool>("captureAutomatically"))
-            StartCapture();
+        if (e.GetCurrentPoint(VideoArea).Properties.IsLeftButtonPressed) StartCapture();
     }
 
     /// <summary>Not capturing: Ctrl+wheel zooms, the wheel pans when zoomed in.</summary>

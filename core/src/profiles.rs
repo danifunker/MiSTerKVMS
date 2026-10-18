@@ -232,9 +232,8 @@ pub struct AppData {
     pub stats_on_change: bool,
     /// Screenshots get a bar under the picture with the core and the time.
     pub screenshot_stamp: bool,
-    /// Capture keyboard and mouse by themselves: when a session connects
-    /// and when the picture is clicked. Off: only the Capture button,
-    /// menu or shortcut does, so a MiSTer can just be watched.
+    /// Capture keyboard and mouse as soon as a host connects. Off, a host
+    /// connects for watching: clicking the picture or Capture captures.
     pub auto_capture: bool,
 }
 

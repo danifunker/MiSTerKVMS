@@ -91,8 +91,8 @@ final class SessionController: ObservableObject {
         }
     }
 
-    /// Capture keyboard and mouse by themselves, on connect and when the
-    /// picture is clicked (the setting; off unless turned on).
+    /// Capture keyboard and mouse as soon as a host connects (the setting;
+    /// off unless turned on). Clicking the picture always captures.
     var autoCapture: Bool {
         get { core.autoCapture() }
         set {
@@ -100,9 +100,6 @@ final class SessionController: ObservableObject {
             objectWillChange.send()
         }
     }
-
-    /// The setting or the --auto-capture launch switch.
-    var captureAutomatically: Bool { core.captureAutomatically() }
 
     // MARK: - Host previews (sidebar)
 
@@ -167,8 +164,8 @@ final class SessionController: ObservableObject {
             refresh()
             refreshPreviews()
         case .captureRequested:
-            // D6: capture automatically once the connection is up (only
-            // with Capture automatically on).
+            // D6: capture once the connection is up (only with Capture
+            // when a host connects, or --auto-capture).
             startCapture()
         case .releaseRequested:
             capture.stop()

@@ -1028,8 +1028,8 @@ impl Controller {
         self.inner.store.change(|d| d.capture_intro_seen = true);
     }
 
-    /// Capture keyboard and mouse by themselves, when a session connects
-    /// and when the picture is clicked (the setting; off unless turned on).
+    /// Capture keyboard and mouse as soon as a host connects (the setting;
+    /// off unless turned on). Clicking the picture or Capture always does.
     pub fn auto_capture(&self) -> bool {
         self.inner.store.data().auto_capture
     }
@@ -1046,9 +1046,8 @@ impl Controller {
         self.inner.notify(ControllerEvent::Changed);
     }
 
-    /// Whether to capture by itself now: on connect (the core asks with
-    /// CaptureRequested) and when the picture is clicked (the shell asks
-    /// this). Otherwise only the Capture button, menu or shortcut captures.
+    /// Whether a host captures as soon as it connects (the core asks with
+    /// CaptureRequested): the setting or the launch switch.
     pub fn capture_automatically(&self) -> bool {
         self.inner.capture_automatically()
     }

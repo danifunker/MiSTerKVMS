@@ -15,8 +15,8 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
-                Toggle("Capture keyboard and mouse automatically", isOn: $controller.autoCapture)
-                Text("When a host connects and when you click the picture. Off, you can just watch: Capture (⇧⌘K) sends your keyboard and mouse to the MiSTer. Starting the app with --auto-capture turns it on for that run.")
+                Toggle("Capture keyboard and mouse when a host connects", isOn: $controller.autoCapture)
+                Text("Off, a host connects for watching: click the picture or press Capture (⇧⌘K) to send your keyboard and mouse to the MiSTer. Starting the app with --auto-capture turns it on for that run.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
