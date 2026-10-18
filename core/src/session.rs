@@ -186,6 +186,14 @@ impl MisterSession {
         self.send_all(out);
     }
 
+    /// Capture started or ended: use this release chord, and forget one
+    /// that was half pressed.
+    pub fn set_release_chord(&self, chord: crate::input::ReleaseChord) {
+        let mut input = self.input.lock().unwrap();
+        input.release_chord = chord;
+        input.reset_chord();
+    }
+
     pub fn set_settings(&self, settings: InputSettings) {
         self.input.lock().unwrap().settings = settings;
     }

@@ -190,6 +190,8 @@ pub(crate) fn encode(picture: &Bgra, cropped: bool) -> Option<(Vec<u8>, u32, u32
 pub(crate) struct Peek {
     pub picture: Option<(Vec<u8>, u32, u32)>,
     pub caption: String,
+    /// The server's name for the stream.
+    pub stream_name: Option<String>,
 }
 
 /// The first picture a look gets.
@@ -235,6 +237,7 @@ pub(crate) fn peek(address: StreamAddress, viewer: String, remote: Option<Remote
     };
     let state = link.stream_state();
     let core = link.status_value("coreRunning");
+    let stream_name = link.stream_name();
     link.close();
     let picture = jpeg.and_then(|data| {
         let mut pic = Bgra::default();
@@ -248,7 +251,7 @@ pub(crate) fn peek(address: StreamAddress, viewer: String, remote: Option<Remote
     } else {
         core.map(|c| core_caption(&c)).unwrap_or_default()
     };
-    Peek { picture, caption }
+    Peek { picture, caption, stream_name }
 }
 
 #[cfg(test)]

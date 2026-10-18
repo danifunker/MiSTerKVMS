@@ -48,6 +48,7 @@ public sealed partial class MainWindow : Window
         // whatever the setting.
         if (Environment.GetCommandLineArgs().Contains("--auto-capture")) _core.Call("forceAutoCapture");
         AutoCaptureButton.IsChecked = _core.Call<bool>("autoCapture");
+        BuildReleaseKeysMenu();
         _core.Call("setHostPreviews", new { on = true });
         HostList.SizeChanged += (_, _) => SizePictures();
         Root.Loaded += (_, _) =>
@@ -142,7 +143,7 @@ public sealed partial class MainWindow : Window
         CaptureButton.Label = s.Capturing ? "Release" : "Capture";
         CaptureIcon.Glyph = s.Capturing ? "" : "";
         ToolTipService.SetToolTip(CaptureButton, s.Capturing
-            ? "Release keyboard and mouse (Right Win + Right Alt + Esc)"
+            ? $"Release keyboard and mouse ({_chordName})"
             : "Send keyboard and mouse to MiSTer (Ctrl+Shift+K, or click the screen)");
         FitButton.IsChecked = s.Display.ScaleMode == ScaleMode.Fit;
         IntegerButton.IsChecked = s.Display.ScaleMode == ScaleMode.Integer;
@@ -339,7 +340,7 @@ public sealed partial class MainWindow : Window
             if (s.LastRecording != null) LastRecordingLink.Content = $"Saved {Path.GetFileName(s.LastRecording)} · Show in Explorer";
         }
         GameText.Text = s.GameRunning;
-        CaptureText.Text = s.Capturing ? "Capturing — Right Win + Right Alt + Esc to release" : "F12 = MiSTer menu · not capturing";
+        CaptureText.Text = s.Capturing ? $"Capturing — {_chordName} to release" : "F12 = MiSTer menu · not capturing";
     }
 
     // MARK: Hosts
@@ -450,8 +451,8 @@ public sealed partial class MainWindow : Window
             {
                 TextWrapping = TextWrapping.Wrap,
                 Text = "The pointer disappears and everything you type goes to the MiSTer. To get them back, " +
-                       "hold Right Win and Right Alt (right of the space bar) and press Esc.\n\n" +
-                       "No Right Win key? Press Ctrl+Alt+Del, then Esc: that always gets them back.\n\n" +
+                       $"press {_chordName} together and let go.\n\n" +
+                       "No such keys? The … menu's Release keys has others, and Ctrl+Alt+Del, then Esc, always gets them back.\n\n" +
                        "F12 opens the MiSTer menu. Clicking the picture captures again.",
             },
             PrimaryButtonText = "Capture",
@@ -716,6 +717,41 @@ public sealed partial class MainWindow : Window
 
     private void Stamp_Click(object sender, RoutedEventArgs e) =>
         _core.Call("setScreenshotStamp", new { on = StampButton.IsChecked == true });
+
+    // MARK: Release keys
+
+    private sealed class ChordOption
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Note { get; set; } = "";
+    }
+
+    /// <summary>The release chord as the keyboard labels it ("Right Win + Right Alt").</summary>
+    private string _chordName = "Right Win + Right Alt";
+
+    /// <summary>The … menu's Release keys: the chords to choose from.</summary>
+    private void BuildReleaseKeysMenu()
+    {
+        string current = _core.Call<string>("releaseChord");
+        _chordName = _core.Call<string>("releaseChordName");
+        HintChord.Text = _chordName;
+        var menu = new MenuFlyout();
+        foreach (var o in _core.Call<List<ChordOption>>("releaseChordOptions"))
+        {
+            var item = new RadioMenuFlyoutItem { Text = o.Name, GroupName = "release", IsChecked = o.Id == current, Tag = o.Id };
+            ToolTipService.SetToolTip(item, $"Press both together, then let go. {o.Note}");
+            item.Click += (_, _) =>
+            {
+                _core.Call("setReleaseChord", new { chord = (string)item.Tag });
+                BuildReleaseKeysMenu();
+                Render();
+            };
+            menu.Items.Add(item);
+        }
+        ReleaseKeysButton.Flyout = menu;
+        ToolTipService.SetToolTip(ReleaseKeysButton, $"Keys that give the keyboard and mouse back: {_chordName}");
+    }
 
     // MARK: Connection info
 

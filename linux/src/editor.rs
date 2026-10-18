@@ -17,7 +17,10 @@ const QUALITIES: [(&str, &str); 4] = [
 ];
 
 pub fn show(parent: &impl IsA<gtk::Widget>, profile: HostProfile, is_new: bool, on_save: impl Fn(HostProfile, bool) + 'static) {
-    let name = adw::EntryRow::builder().title("Name").text(profile.name.as_str()).build();
+    // Empty: the core uses the capture server's name for the stream and
+    // keeps it in step.
+    let name = adw::EntryRow::builder().title("Name (empty: as the capture server calls it)").text(profile.name.as_str()).build();
+    let name_from_server = profile.name_from_server;
 
     // Streams found on the network, and the address actually saved (picking
     // one fills it in; it can also be typed).
@@ -128,7 +131,7 @@ pub fn show(parent: &impl IsA<gtk::Widget>, profile: HostProfile, is_new: bool, 
         });
     }
     {
-        let (stream, mister_host, streams, syncing) = (stream.clone(), mister_host.clone(), streams.clone(), syncing.clone());
+        let (stream, mister_host, streams, syncing, name) = (stream.clone(), mister_host.clone(), streams.clone(), syncing.clone(), name.clone());
         pick.connect_selected_notify(move |pick| {
             if syncing.get() {
                 return;
@@ -140,6 +143,10 @@ pub fn show(parent: &impl IsA<gtk::Widget>, profile: HostProfile, is_new: bool, 
             // The stream knows its MiSTer.
             if !f.mister.is_empty() {
                 mister_host.set_text(&f.mister);
+            }
+            // And its name, unless one was typed.
+            if name_from_server || name.text().trim().is_empty() {
+                name.set_text(&f.name);
             }
         });
     }

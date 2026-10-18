@@ -78,7 +78,8 @@ struct ProfileEditor: View {
     var body: some View {
         Form {
             Section("Host") {
-                TextField("Name", text: $profile.name)
+                TextField("Name", text: $profile.name,
+                          prompt: Text(source == "local" ? "MiSTer" : "As the capture server calls it"))
             }
             Section {
                 Picker("Video & audio from", selection: $source) {
@@ -144,7 +145,6 @@ struct ProfileEditor: View {
                     onSave(profile)
                     dismiss()
                 }
-                .disabled(profile.name.isEmpty)
             }
         }
     }
@@ -164,6 +164,10 @@ extension ProfileEditor {
                         ForEach(streams, id: \.address) { found in
                             Button(found.mister.isEmpty ? found.name : "\(found.name) (\(found.mister))") {
                                 profile.stream = found.address
+                                // The server's name, unless one was typed.
+                                if profile.nameFromServer || profile.name.isEmpty {
+                                    profile.name = found.name
+                                }
                             }
                         }
                     } label: {

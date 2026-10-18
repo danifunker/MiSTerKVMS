@@ -215,6 +215,11 @@ impl MkvmLink {
         self.state.lock().unwrap().welcome.as_ref().map(|w| w.server.clone())
     }
 
+    /// The server's name for the stream, once connected.
+    pub(crate) fn stream_name(&self) -> Option<String> {
+        self.state.lock().unwrap().welcome.as_ref().map(|w| w.stream.name.clone()).filter(|n| !n.trim().is_empty())
+    }
+
     /// The connection is encrypted (a paired device's key).
     pub(crate) fn encrypted(&self) -> bool {
         self.remote.is_some()

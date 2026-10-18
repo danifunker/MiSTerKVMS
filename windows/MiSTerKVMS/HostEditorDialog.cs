@@ -9,7 +9,7 @@ namespace MiSTerKVMS;
 public sealed class HostEditorDialog : ContentDialog
 {
     private readonly KvmsCore _core;
-    private readonly TextBox _name = new() { Header = "Name" };
+    private readonly TextBox _name = new() { Header = "Name", PlaceholderText = "As the capture server calls it" };
 
     private static readonly (string Kind, string Label)[] Sources =
     [
@@ -81,8 +81,14 @@ public sealed class HostEditorDialog : ContentDialog
         _altClick.IsChecked = profile.AltClickIsMiddle;
         _rawMouse.IsOn = profile.RawMouse;
 
-        _name.TextChanged += (_, _) => IsPrimaryButtonEnabled = _name.Text.Trim().Length > 0;
         _source.SelectionChanged += (_, _) => ShowSource();
+        // The server's name for the stream, unless one was typed (empty
+        // also works: the core fills it in and keeps it in step).
+        _stream.SelectionChanged += (_, _) =>
+        {
+            if (_stream.SelectedItem is FoundStream f && (Profile.NameFromServer || _name.Text.Trim().Length == 0))
+                _name.Text = f.Name;
+        };
         _findStreams.Click += (_, _) => FindStreams();
         _findCards.Click += (_, _) => FindCards();
         _card.SelectionChanged += (_, _) =>

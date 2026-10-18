@@ -19,7 +19,7 @@ pub mod video;
 pub mod win;
 
 pub use controller::{Controller, ControllerEvent, ControllerObserver, ControllerState};
-pub use input::{InputSettings, KeyResult, MouseButton};
+pub use input::{InputSettings, KeyResult, MouseButton, ReleaseChord};
 pub use session::{ConnectionState, InputStats, MisterSession, SessionObserver};
 pub use profiles::{HostProfile, ProfileStore};
 pub use video::{DisplaySettings, MediaSink, NativeSurface, ScaleMode, VideoError, VideoSession, VideoStats};

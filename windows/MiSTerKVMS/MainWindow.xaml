@@ -185,6 +185,9 @@
                     <AppBarButton Label="Import hosts…" Click="Import_Click">
                         <AppBarButton.Icon><FontIcon Glyph="&#xE8B5;" /></AppBarButton.Icon>
                     </AppBarButton>
+                    <AppBarButton x:Name="ReleaseKeysButton" Label="Release keys">
+                        <AppBarButton.Icon><FontIcon Glyph="&#xE92E;" /></AppBarButton.Icon>
+                    </AppBarButton>
                     <AppBarToggleButton x:Name="AutoCaptureButton" Label="Capture when a host connects" Click="AutoCapture_Click"
                                         ToolTipService.ToolTip="Capture keyboard and mouse as soon as a host connects. Off, a host connects for watching: click the picture or press Capture (Ctrl+Shift+K). MiSTerKVMS.exe --auto-capture turns it on for that run.">
                         <AppBarToggleButton.Icon><FontIcon Glyph="&#xE962;" /></AppBarToggleButton.Icon>
@@ -234,7 +237,7 @@
                         <TextBlock Text="Keyboard and mouse go to MiSTer" Foreground="White" HorizontalAlignment="Center"
                                    FontWeight="SemiBold" />
                         <TextBlock Foreground="White" HorizontalAlignment="Center">
-                            Press <Bold>Right Win + Right Alt + Esc</Bold> to release · <Bold>F12</Bold> opens the MiSTer menu
+                            Press <Bold><Run x:Name="HintChord" Text="Right Win + Right Alt" /></Bold> together to release · <Bold>F12</Bold> opens the MiSTer menu
                         </TextBlock>
                         <TextBlock Foreground="#FFFFD54F" HorizontalAlignment="Center" FontSize="12"
                                    Text="Windows keeps Ctrl+Alt+Del and Win+L: use the toolbar to send Ctrl+Alt+Del." />

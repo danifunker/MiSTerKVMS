@@ -10,6 +10,7 @@ pub mod hid {
     pub const DELETE: u16 = 0x4C;
     pub const LEFT_CTRL: u16 = 0xE0;
     pub const LEFT_ALT: u16 = 0xE2;
+    pub const LEFT_GUI: u16 = 0xE3;
     pub const RIGHT_ALT: u16 = 0xE6;
     pub const RIGHT_GUI: u16 = 0xE7;
 }

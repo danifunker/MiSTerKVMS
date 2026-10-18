@@ -123,6 +123,8 @@ pub struct Ui {
     last_recording: gtk::Button,
     game_label: gtk::Label,
     capture_label: gtk::Label,
+    /// The capture hint's "Press … together to release" line.
+    hint_keys: gtk::Label,
     /// Connection Info: the open host's connection in plain words.
     info_button: gtk::MenuButton,
     info_grid: gtk::Grid,
@@ -212,6 +214,11 @@ impl Ui {
         main_menu.append_section(None, &stats_section);
         let app_section = gio::Menu::new();
         app_section.append(Some("Capture When a Host Connects"), Some("win.auto-capture"));
+        let release_keys = gio::Menu::new();
+        for o in core.release_chord_options() {
+            release_keys.append(Some(&o.name), Some(&format!("win.release-chord::{}", o.id)));
+        }
+        app_section.append_submenu(Some("Release Keys"), &release_keys);
         app_section.append(Some("Core and Time on Screenshots"), Some("win.screenshot-stamp"));
         app_section.append(Some("Export Hosts…"), Some("win.export"));
         app_section.append(Some("Import Hosts…"), Some("win.import"));
@@ -286,7 +293,7 @@ impl Ui {
         let hint_title = gtk::Label::new(Some("Keyboard and mouse go to MiSTer"));
         hint_title.add_css_class("heading");
         let hint_keys = gtk::Label::new(None);
-        hint_keys.set_markup("Press <b>Right Super + Right Alt + Esc</b> to release · <b>F12</b> opens the MiSTer menu");
+
         let hint_note = gtk::Label::new(None);
         hint_note.add_css_class("warning");
         hint_note.set_wrap(true);
@@ -426,6 +433,7 @@ impl Ui {
             last_recording,
             game_label,
             capture_label,
+            hint_keys,
             info_button,
             info_grid,
             capture: RefCell::new(Capture::default()),
@@ -644,6 +652,20 @@ impl Ui {
             action.set_state(&on.to_variant());
         });
         w.add_action(&auto);
+        let chord = gio::SimpleAction::new_stateful(
+            "release-chord",
+            Some(glib::VariantTy::STRING),
+            &self.core.release_chord().id().to_variant(),
+        );
+        chord.connect_activate(|action, param| {
+            let (Some(ui), Some(id)) = (ui(), param.and_then(|p| p.str().map(str::to_string))) else { return };
+            ui.core.set_release_chord(kvms_core::ReleaseChord::from_id(&id));
+            action.set_state(&id.to_variant());
+            if let Some(o) = ui.core.release_chord_options().into_iter().find(|o| o.id == id) {
+                ui.toast(&format!("Release with {}: press both together, then let go. {}", o.name, o.note));
+            }
+        });
+        w.add_action(&chord);
         // Hosts' pictures shrink to fit as the window changes.
         for prop in ["default-height", "maximized", "fullscreened"] {
             w.connect_notify_local(Some(prop), |_, _| {
@@ -924,11 +946,12 @@ impl Ui {
         set_state("predictive", s.display.predictive_cursor.to_variant());
 
         self.capture_button.set_icon_name(if s.capturing { "process-stop-symbolic" } else { "input-mouse-symbolic" });
-        self.capture_button.set_tooltip_text(Some(if s.capturing {
-            "Release keyboard and mouse (Right Super + Right Alt + Esc)"
+        let tooltip = if s.capturing {
+            format!("Release keyboard and mouse ({})", self.core.release_chord_name())
         } else {
-            "Send keyboard and mouse to MiSTer (or click the screen) — Ctrl+Shift+K"
-        }));
+            "Send keyboard and mouse to MiSTer (or click the screen) — Ctrl+Shift+K".to_string()
+        };
+        self.capture_button.set_tooltip_text(Some(&tooltip));
         self.menu_button.set_sensitive(connected);
         self.info_button.set_sensitive(open);
         self.zoom_label.set_label(&format!("{}%", (s.display.zoom * 100.0).round()));
@@ -1072,11 +1095,12 @@ impl Ui {
             }
         }
         self.game_label.set_text(&s.game_running);
-        self.capture_label.set_text(if s.capturing {
-            "Capturing — Right Super + Right Alt + Esc to release"
+        let capturing = if s.capturing {
+            format!("Capturing — {} to release", self.core.release_chord_name())
         } else {
-            "F12 = MiSTer menu · not capturing"
-        });
+            "F12 = MiSTer menu · not capturing".to_string()
+        };
+        self.capture_label.set_text(&capturing);
     }
 
     // MARK: Capture
@@ -1197,10 +1221,13 @@ impl Ui {
         let dialog = adw::AlertDialog::new(
             Some("Your keyboard and mouse are about to go to the MiSTer"),
             Some(
-                "The pointer disappears and everything you type goes to the MiSTer. To get them back, \
-                 hold Right Super and Right Alt (right of the space bar) and press Esc. Switching to \
-                 another window also gets them back.\n\nF12 opens the MiSTer menu. Clicking the picture \
-                 captures again.",
+                &format!(
+                    "The pointer disappears and everything you type goes to the MiSTer. To get them back, \
+                     press {} together and let go (the menu's Release Keys has others). Switching to \
+                     another window also gets them back.\n\nF12 opens the MiSTer menu. Clicking the picture \
+                     captures again.",
+                    self.core.release_chord_name()
+                ),
             ),
         );
         dialog.add_responses(&[("later", "Not Now"), ("capture", "Capture")]);
@@ -1228,6 +1255,10 @@ impl Ui {
     }
 
     fn show_hint(self: &Rc<Self>, note: Option<String>) {
+        self.hint_keys.set_markup(&format!(
+            "Press <b>{}</b> together to release · <b>F12</b> opens the MiSTer menu",
+            glib::markup_escape_text(&self.core.release_chord_name())
+        ));
         self.hint_note.set_text(note.as_deref().unwrap_or(""));
         self.hint_note.set_visible(note.is_some());
         self.capture_hint.set_visible(true);

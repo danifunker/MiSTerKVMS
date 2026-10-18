@@ -20,6 +20,15 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
+                Picker("Release keyboard and mouse with", selection: $controller.releaseChord) {
+                    ForEach(controller.releaseChordOptions(), id: \.id) { option in
+                        Text(option.name).tag(option.chord)
+                    }
+                }
+                Text("Press both together, then let go. \(controller.releaseChordOptions().first { $0.chord == controller.releaseChord }?.note ?? "")")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle("Show stats when the connection changes", isOn: $controller.statsOnChange)
                 Text("Flashes the stats overlay for a few seconds when a session connects, drops or changes resolution. They're always one ⌘I away, or pinned with ⇧⌘I.")
                     .font(.caption).foregroundStyle(.secondary)

@@ -11,13 +11,14 @@ struct SessionView: View {
     @State private var showCaptureHint = false
 
     /// How to get out of capture, shown once before the first one.
-    static let captureIntro = """
+    static func captureIntro(chord: String) -> String {
+        """
         The pointer disappears and everything you type goes to the MiSTer. To get them back to your Mac, \
-        hold Right ⌘ and Right ⌥ (right of the space bar) and press Esc. The Release button in the toolbar \
-        does the same once you're back.
+        press \(chord) together and let go. (Settings has other keys for keyboards without them.)
 
         F12 opens the MiSTer menu. Clicking the picture captures again.
         """
+    }
 
     var body: some View {
         ZStack {
@@ -65,7 +66,7 @@ struct SessionView: View {
                 .keyboardShortcut(.defaultAction)
             Button("Not Now", role: .cancel) { controller.captureIntroAnswered(capture: false) }
         } message: {
-            Text(Self.captureIntro)
+            Text(Self.captureIntro(chord: controller.releaseChordName))
         }
         .navigationTitle(profile.name)
         .navigationSubtitle(controller.coreRunning.isEmpty ? profile.subtitle : controller.coreRunning)
@@ -83,7 +84,7 @@ struct SessionView: View {
                     Button { controller.stopCapture() } label: {
                         Label("Release", systemImage: "cursorarrow.slash")
                     }
-                    .help("Release keyboard and mouse (Right ⌘ + Right ⌥ + Esc)")
+                    .help("Release keyboard and mouse (\(controller.releaseChordName))")
                 } else {
                     Button { controller.startCapture() } label: {
                         Label("Capture", systemImage: "cursorarrow.rays")
@@ -281,7 +282,8 @@ private struct CaptureHint: View {
         VStack(spacing: 4) {
             Text("Keyboard and mouse go to MiSTer")
                 .fontWeight(.semibold)
-            Text("Press **Right ⌘ + Right ⌥ + Esc** to release · **F12** opens the MiSTer menu")
+            Text("Press ") + Text(controller.releaseChordName).bold() + Text(" together to release · ")
+                + Text("F12").bold() + Text(" opens the MiSTer menu")
             if controller.profile?.rawMouse == true && !controller.rawMouseActive {
                 Text("Raw mouse input needs Input Monitoring permission: using macOS acceleration.")
                     .foregroundStyle(.yellow)
@@ -451,7 +453,7 @@ private struct StatusBar: View {
                 Text(control).lineLimit(1).foregroundStyle(.secondary)
             }
             Text("F12 = MiSTer menu").foregroundStyle(.secondary)
-            Text(controller.capturing ? "Capturing — Right ⌘ + Right ⌥ + Esc to release" : "Not capturing")
+            Text(controller.capturing ? "Capturing — \(controller.releaseChordName) to release" : "Not capturing")
                 .foregroundStyle(controller.capturing ? .primary : .secondary)
         }
         .font(.caption)

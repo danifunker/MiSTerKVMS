@@ -99,6 +99,9 @@ public sealed class HostProfile
 {
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
+    /// <summary>The name follows the capture server's name for the stream
+    /// (the core decides on save: an empty name, or the server's, follows).</summary>
+    public bool NameFromServer { get; set; }
     /// <summary>"capture", "local", or "" ("local" if LocalVideo is set,
     /// else "capture").</summary>
     public string Source { get; set; } = "";

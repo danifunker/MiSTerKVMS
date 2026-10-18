@@ -22,6 +22,12 @@ use crate::video::{DisplaySettings, ScaleMode};
 pub struct HostProfile {
     pub id: String,
     pub name: String,
+    /// The name is the capture server's name for the stream and follows it
+    /// (it was left empty, or typed as the server has it), so nobody has
+    /// to type it. Off for names typed by hand. Hosts saved before this
+    /// existed load with it off unless their name is the stream's.
+    #[serde(default)]
+    pub name_from_server: bool,
     /// Where video comes from: "capture" (a capture server stream),
     /// "local" (a capture card on this computer) or "demo" (the test
     /// pattern, input written out instead of sent: crate::demo). Empty: "local" if
@@ -79,7 +85,8 @@ impl Default for HostProfile {
     fn default() -> Self {
         Self {
             id: new_id(),
-            name: "New MiSTer".into(),
+            name: String::new(),
+            name_from_server: true,
             source: String::new(),
             stream: String::new(),
             local_video: String::new(),
@@ -115,7 +122,34 @@ pub enum SourceKind {
     Demo,
 }
 
+/// What a host is called when it has no name and the server gives none.
+const UNNAMED: &str = "MiSTer";
+
 impl HostProfile {
+    /// The capture server's name for this host's stream ("MiSTer SS1"),
+    /// from its address.
+    pub fn server_name(&self) -> Option<String> {
+        mkvm::StreamAddress::parse(&self.stream).ok().map(|a| a.stream).filter(|n| !n.trim().is_empty())
+    }
+
+    /// On save: a capture host whose name is empty, the server's, or the
+    /// server's it had before (unchanged) follows the server's name;
+    /// anything else typed is kept as is. `before` is the saved copy.
+    pub(crate) fn settle_name(&mut self, before: Option<&HostProfile>) {
+        let typed = self.name.trim().to_string();
+        let server = self.server_name();
+        let follows = self.source_kind() == SourceKind::Capture
+            && (typed.is_empty()
+                || server.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(&typed))
+                || before.is_some_and(|b| b.name_from_server && b.name.trim() == typed));
+        self.name_from_server = follows;
+        self.name = match (follows, server) {
+            (true, Some(server)) => server,
+            _ if typed.is_empty() => UNNAMED.into(),
+            _ => typed,
+        };
+    }
+
     pub fn source_kind(&self) -> SourceKind {
         match self.source.as_str() {
             "capture" => SourceKind::Capture,
@@ -235,6 +269,8 @@ pub struct AppData {
     /// Capture keyboard and mouse as soon as a host connects. Off, a host
     /// connects for watching: clicking the picture or Capture captures.
     pub auto_capture: bool,
+    /// The keys that give the keyboard and mouse back from capture.
+    pub release_chord: crate::input::ReleaseChord,
 }
 
 impl Default for AppData {
@@ -248,6 +284,7 @@ impl Default for AppData {
             stats_on_change: false,
             screenshot_stamp: true,
             auto_capture: false,
+            release_chord: Default::default(),
         }
     }
 }
@@ -278,6 +315,14 @@ impl ProfileStore {
             }),
             Err(_) => AppData::default(),
         };
+        let mut data: AppData = data;
+        // Saved before names followed the server: one that is the stream's
+        // name follows it from now on.
+        for p in &mut data.profiles {
+            if !p.name_from_server && p.server_name().is_some_and(|s| s.eq_ignore_ascii_case(p.name.trim())) {
+                p.name_from_server = true;
+            }
+        }
         Self { path: Some(path), data: Mutex::new(data) }
     }
 
@@ -404,6 +449,51 @@ fn new_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_follow_the_capture_server_unless_typed() {
+        let stream = "mkvm://pc/MiSTer%20SS1".to_string();
+        let capture = |name: &str| HostProfile { name: name.into(), source: "capture".into(), stream: stream.clone(), ..Default::default() };
+
+        // Left empty, or typed as the server has it: follows.
+        let mut p = capture("");
+        p.settle_name(None);
+        assert_eq!((p.name.as_str(), p.name_from_server), ("MiSTer SS1", true));
+        let mut p = capture("mister ss1");
+        p.settle_name(None);
+        assert_eq!((p.name.as_str(), p.name_from_server), ("MiSTer SS1", true));
+
+        // Saved again unchanged with another stream: takes the new name.
+        let before = p.clone();
+        p.stream = "mkvm://pc/Arcade".into();
+        p.settle_name(Some(&before));
+        assert_eq!((p.name.as_str(), p.name_from_server), ("Arcade", true));
+
+        // Typed: kept, and stops following.
+        let mut p = capture("Living room");
+        p.settle_name(None);
+        assert_eq!((p.name.as_str(), p.name_from_server), ("Living room", false));
+
+        // A card on this computer has no server: an empty name gets one.
+        let mut p = HostProfile { source: "local".into(), ..Default::default() };
+        p.settle_name(None);
+        assert_eq!((p.name.as_str(), p.name_from_server), (UNNAMED, false));
+    }
+
+    #[test]
+    fn older_hosts_named_like_their_stream_follow_it() {
+        let dir = std::env::temp_dir().join(format!("kvms-names-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("profiles.json");
+        let json = r#"{"profiles":[
+            {"id":"a","name":"MiSTer SS1","source":"capture","stream":"mkvm://pc/MiSTer%20SS1"},
+            {"id":"b","name":"Den","source":"capture","stream":"mkvm://pc/MiSTer%20SS2"}]}"#;
+        std::fs::write(&path, json).unwrap();
+        let store = ProfileStore::open(path);
+        let follows: Vec<bool> = store.profiles().iter().map(|p| p.name_from_server).collect();
+        assert_eq!(follows, [true, false]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn ids_are_unique_uuids() {

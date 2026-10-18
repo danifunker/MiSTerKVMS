@@ -259,6 +259,19 @@ fn call(c: &Arc<Controller>, r: Value) -> Result<Value, String> {
             done
         }
         "captureIntroSeen" => Ok(json!(c.capture_intro_seen())),
+        "releaseChord" => Ok(json!(c.release_chord().id())),
+        "setReleaseChord" => {
+            let id: String = arg(&r, "chord")?;
+            c.set_release_chord(crate::input::ReleaseChord::from_id(&id));
+            done
+        }
+        "releaseChordName" => Ok(json!(c.release_chord_name())),
+        // [{id, name, note}]
+        "releaseChordOptions" => Ok(json!(c
+            .release_chord_options()
+            .into_iter()
+            .map(|o| json!({ "id": o.id, "name": o.name, "note": o.note }))
+            .collect::<Vec<_>>())),
         "autoCapture" => Ok(json!(c.auto_capture())),
         "setAutoCapture" => {
             c.set_auto_capture(arg(&r, "on")?);

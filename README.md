@@ -70,7 +70,7 @@ The connection probe in `core/examples` reads your MiSTer address from `local.se
 ## Using it
 
 - **Capture** starts when a host connects and whenever you click the screen.
-- **Release**: **Right ⌘ + Right ⌥ + Esc** (Windows: **Right Win + Right Alt + Esc**; Linux: **Right Super + Right Alt + Esc**). Switching to another window also releases.
+- **Release**: press **Right ⌘ + Right ⌥** together and let go (Windows: **Right Win + Right Alt**; Linux: **Right Super + Right Alt**). Keyboards without those keys can pick **Left ⌘/Win/Super + Left ⌥/Alt** or **Left Ctrl + Left Alt** (QEMU-style) in the settings. Switching to another window also releases.
 - **F12** opens the MiSTer menu.
 - **⌥-click** (Windows: **Alt-click**) sends a middle click (configurable per host).
 - Windows never lets an app capture **Ctrl+Alt+Del** or **Win+L**: use **Send Ctrl+Alt+Del** in the toolbar's **…** menu.

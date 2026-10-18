@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-use crate::input::{KeyResult, MouseButton};
+use crate::input::{KeyResult, MouseButton, ReleaseChord};
 use crate::keymap::hid;
 use crate::link::{MkvmLink, StreamState};
 use crate::log;
@@ -110,6 +110,18 @@ enum Recorder {
 struct Recording {
     since: Instant,
     recorder: Recorder,
+}
+
+/// A release chord as the settings list it.
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+pub struct ReleaseChordOption {
+    pub chord: ReleaseChord,
+    /// Its id in the settings file and the C API, e.g. "rightGuiAlt".
+    pub id: String,
+    /// As this keyboard labels the keys, e.g. "Right ⌘ + Right ⌥".
+    pub name: String,
+    /// When to pick it.
+    pub note: String,
 }
 
 /// One line of the Connection Info panel: "Round trip", "4.2 ms".
@@ -322,6 +334,7 @@ impl Controller {
     pub fn save_profile(&self, profile: HostProfile) {
         let mut profile = profile;
         profile.mister_host = profile.mister_host.trim().to_string();
+        profile.settle_name(self.inner.store.get(&profile.id).as_ref());
         if let Some(before) = self.inner.store.get(&profile.id) {
             // Keep what was learned meanwhile (the editor had an older copy).
             profile.cursor_lag_ms = before.cursor_lag_ms;
@@ -1052,6 +1065,43 @@ impl Controller {
         self.inner.capture_automatically()
     }
 
+    /// The keys that give the keyboard and mouse back: pressed together,
+    /// then let go.
+    pub fn release_chord(&self) -> ReleaseChord {
+        self.inner.store.data().release_chord
+    }
+
+    /// Takes effect from the next capture.
+    pub fn set_release_chord(&self, chord: ReleaseChord) {
+        self.inner.store.change(|d| d.release_chord = chord);
+        self.inner.notify(ControllerEvent::Changed);
+    }
+
+    /// The release chord as this keyboard labels it, for hints:
+    /// "Right ⌘ + Right ⌥".
+    pub fn release_chord_name(&self) -> String {
+        self.release_chord().name()
+    }
+
+    /// The release chords to choose from, for the settings.
+    pub fn release_chord_options(&self) -> Vec<ReleaseChordOption> {
+        let mac = cfg!(any(target_os = "macos", target_os = "ios"));
+        ReleaseChord::ALL
+            .into_iter()
+            .map(|chord| ReleaseChordOption {
+                chord,
+                id: chord.id().into(),
+                name: chord.name(),
+                note: match chord {
+                    ReleaseChord::RightGuiAlt => "Right of the space bar on most keyboards; next to nothing on the MiSTer uses it.".into(),
+                    ReleaseChord::LeftGuiAlt if mac => "For keyboards without ⌘ and ⌥ keys right of the space bar.".into(),
+                    ReleaseChord::LeftGuiAlt => "For keyboards without a Win key right of the space bar (many laptops).".into(),
+                    ReleaseChord::CtrlAlt => "Like QEMU. Ctrl+Alt combinations, such as Ctrl+Alt+Del, can't reach the MiSTer then.".into(),
+                },
+            })
+            .collect()
+    }
+
     /// Show the stats for a few seconds when the connection changes.
     pub fn stats_on_change(&self) -> bool {
         self.inner.store.data().stats_on_change
@@ -1301,6 +1351,9 @@ impl Inner {
             }
             (s.video.clone(), s.session.clone())
         };
+        if let Some(session) = &session {
+            session.set_release_chord(self.store.data().release_chord);
+        }
         if let (false, Some(session)) = (capturing, session) {
             session.release_all();
         }
@@ -1540,6 +1593,7 @@ impl Inner {
         let observer = Arc::new(Observer { inner: Arc::downgrade(&self), generation });
         self.connect_capture(&mut s, &profile, viewer, observer);
         drop(s);
+        self.follow_server_name(&profile.id, &found.name);
         self.start_video();
         self.notify(ControllerEvent::ProfilesChanged);
         self.notify(ControllerEvent::Changed);
@@ -1591,6 +1645,9 @@ impl Inner {
         let viewer = format!("{} (preview)", self.viewer_name());
         thread::spawn(move || {
             let found = previews::peek(address, viewer, remote);
+            if let Some(name) = &found.stream_name {
+                inner.follow_server_name(&id, name);
+            }
             // Opened meanwhile: its own video says it better.
             let open = inner.state.lock().unwrap().profile.as_ref().is_some_and(|p| p.id == id);
             let changed = {
@@ -1604,6 +1661,22 @@ impl Inner {
         });
     }
 
+    /// A host whose name follows the server's takes `name` (the server's
+    /// name for its stream, as it just said).
+    fn follow_server_name(&self, id: &str, name: &str) {
+        let name = name.trim();
+        let stale = self.store.get(id).is_some_and(|p| p.name_from_server && !name.is_empty() && p.name != name);
+        if !stale {
+            return;
+        }
+        log(&format!("host: name now '{name}', as the capture server calls it"));
+        self.store.update(id, |p| p.name = name.to_string());
+        if let Some(p) = self.state.lock().unwrap().profile.as_mut().filter(|p| p.id == id) {
+            p.name = name.to_string();
+        }
+        self.notify(ControllerEvent::ProfilesChanged);
+    }
+
     fn viewer_name(&self) -> String {
         let name = self.store.data().viewer_name;
         if name.trim().is_empty() { computer_name() } else { name }
@@ -1611,10 +1684,13 @@ impl Inner {
 
     fn tick(&self) {
         self.tick_previews();
-        let (session, video, link) = {
+        let (session, video, link, open) = {
             let s = self.state.lock().unwrap();
-            (s.session.clone(), s.video.clone(), s.link.clone())
+            (s.session.clone(), s.video.clone(), s.link.clone(), s.profile.as_ref().map(|p| p.id.clone()))
         };
+        if let (Some(name), Some(id)) = (link.as_ref().and_then(|l| l.stream_name()), open) {
+            self.follow_server_name(&id, &name);
+        }
         let stream = link.map(|l| l.stream_state());
         let input_stats = session.map(|s| s.stats());
         let video_stats = video.map(|v| v.stats());

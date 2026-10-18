@@ -101,6 +101,21 @@ final class SessionController: ObservableObject {
         }
     }
 
+    /// The keys that give the keyboard and mouse back, pressed together and
+    /// let go (Settings).
+    var releaseChord: ReleaseChord {
+        get { core.releaseChord() }
+        set {
+            core.setReleaseChord(chord: newValue)
+            objectWillChange.send()
+        }
+    }
+
+    /// The release chord as the keyboard labels it: "Right ⌘ + Right ⌥".
+    var releaseChordName: String { core.releaseChordName() }
+
+    func releaseChordOptions() -> [ReleaseChordOption] { core.releaseChordOptions() }
+
     // MARK: - Host previews (sidebar)
 
     struct Preview {
