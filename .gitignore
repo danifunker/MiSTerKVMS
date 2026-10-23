@@ -17,3 +17,7 @@
 # iPhone app: generated bindings
 /ios/MiSTerKVMS/Generated/
 xcuserdata/
+
+# Android app: the core and its bindings (scripts/build-android.sh)
+/android/app/src/main/jniLibs/
+/android/app/src/generated/

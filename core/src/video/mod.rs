@@ -87,6 +87,8 @@ pub enum NativeSurface {
     AppKit { ns_view: u64 },
     /// A UIView (iOS). Create the session on the main thread.
     UiKit { ui_view: u64 },
+    /// An `ANativeWindow*` (Android), from `AndroidCore.windowFromSurface`.
+    Android { a_native_window: u64 },
     /// A window (Windows). `hinstance` may be 0.
     Win32 { hwnd: u64, hinstance: u64 },
     /// A DirectComposition surface handle (Windows,

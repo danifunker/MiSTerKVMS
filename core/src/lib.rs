@@ -2,6 +2,8 @@
 
 uniffi::setup_scaffolding!();
 
+#[cfg(target_os = "android")]
+pub mod android;
 pub mod capi;
 pub mod controller;
 pub mod demo;
@@ -37,8 +39,14 @@ pub fn default_input_settings() -> InputSettings {
 
 /// One timestamped line on stderr (the apps send it to their log file).
 pub fn log(msg: &str) {
-    let t = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0.0, |d| d.as_secs_f64());
-    eprintln!("[{t:.3}] {msg}");
+    // Android drops stderr: there it goes to logcat (tag "kvms").
+    #[cfg(target_os = "android")]
+    android::log(msg);
+    #[cfg(not(target_os = "android"))]
+    {
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0.0, |d| d.as_secs_f64());
+        eprintln!("[{t:.3}] {msg}");
+    }
 }

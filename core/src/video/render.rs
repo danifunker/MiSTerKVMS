@@ -7,7 +7,7 @@ use std::num::NonZeroIsize;
 use std::ptr::NonNull;
 
 use raw_window_handle::{
-    AppKitDisplayHandle, AppKitWindowHandle, RawDisplayHandle, RawWindowHandle, UiKitDisplayHandle,
+    AndroidDisplayHandle, AndroidNdkWindowHandle, AppKitDisplayHandle, AppKitWindowHandle, RawDisplayHandle, RawWindowHandle, UiKitDisplayHandle,
     UiKitWindowHandle, WaylandDisplayHandle, WaylandWindowHandle, Win32WindowHandle, WindowsDisplayHandle, XlibDisplayHandle, XlibWindowHandle,
 };
 
@@ -161,6 +161,10 @@ pub unsafe fn create_surface(
         NativeSurface::UiKit { ui_view } => raw(
             RawDisplayHandle::UiKit(UiKitDisplayHandle::new()),
             RawWindowHandle::UiKit(UiKitWindowHandle::new(ptr(ui_view, "view")?)),
+        ),
+        NativeSurface::Android { a_native_window } => raw(
+            RawDisplayHandle::Android(AndroidDisplayHandle::new()),
+            RawWindowHandle::AndroidNdk(AndroidNdkWindowHandle::new(ptr(a_native_window, "window")?)),
         ),
         NativeSurface::Win32 { hwnd, hinstance } => {
             let mut handle = Win32WindowHandle::new(NonZeroIsize::new(hwnd as isize).ok_or("null hwnd")?);
