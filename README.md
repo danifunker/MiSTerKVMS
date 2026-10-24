@@ -2,7 +2,7 @@
 
 A KVM-style desktop app for [MiSTer FPGA](https://github.com/MiSTer-devel/Main_MiSTer/wiki): keyboard and mouse go to MiSTer through [mrext Remote](https://github.com/wizzomafizzo/mrext), and video/audio come from **MiSTerKVMS Capture**, our capture server on the PC with the capture card(s), or from a card plugged into this computer.
 
-Status: 1.0. Keyboard/mouse via mrext, video and audio from capture server streams or a local capture card, scaling/zoom/auto-crop, recording to MP4, screenshots (copied or saved as PNG, with the core and time under the picture), a host list with a picture of each MiSTer and the core it's running, hosts connect for watching and capture keyboard and mouse when you click the picture or press Capture (or as soon as they connect: Settings, or `--auto-capture`), an experimental predictive cursor that hides the capture lag, and an iPhone app (TestFlight; see [docs/IPHONE.md](docs/IPHONE.md)). See [docs/CAPTURE-SERVER.md](docs/CAPTURE-SERVER.md), [docs/PLANNING.md](docs/PLANNING.md), and the Windows/Linux port plans in [docs/PORTING.md](docs/PORTING.md).
+Status: 1.0. Keyboard/mouse via mrext, video and audio from capture server streams or a local capture card, scaling/zoom/auto-crop, recording to MP4, screenshots (copied or saved as PNG, with the core and time under the picture), a host list with a picture of each MiSTer and the core it's running, hosts connect for watching and capture keyboard and mouse when you click the picture or press Capture (or as soon as they connect: Settings, or `--auto-capture`), an experimental predictive cursor that hides the capture lag, an iPhone app (TestFlight; see [docs/IPHONE.md](docs/IPHONE.md)) and an Android app (Google Play internal testing; see [docs/ANDROID.md](docs/ANDROID.md)). See [docs/CAPTURE-SERVER.md](docs/CAPTURE-SERVER.md), [docs/PLANNING.md](docs/PLANNING.md), and the Windows/Linux port plans in [docs/PORTING.md](docs/PORTING.md).
 
 ## Install
 
@@ -11,6 +11,8 @@ From [Releases](https://github.com/danifunker/MiSTerKVMS/releases):
 - **macOS:** open the DMG and drag **MiSTerKVMS** to **Applications**. Universal app (Apple Silicon + Intel), macOS 14 or later.
 - **Linux:** unpack `MiSTerKVMS-<version>-linux-x86_64.tar.gz` and run `./install.sh` (adds it to the app menu) or `./misterkvms` in place. Needs GTK 4.14+ and libadwaita 1.5+ (Ubuntu 24.04, Fedora 40 or newer).
 - **Windows:** unzip `MiSTerKVMS-<version>-win-x64.zip` anywhere and run **MiSTerKVMS.exe**. 64-bit Windows 10 or 11; nothing else to install for the app itself. It isn't code-signed yet, so SmartScreen may warn the first time (More info → Run anyway).
+- **iPhone:** TestFlight for now ([docs/IPHONE.md](docs/IPHONE.md)).
+- **Android:** Google Play's internal testing track for now (Android 10 or later; [docs/ANDROID.md](docs/ANDROID.md)). Both phone apps watch and control MiSTers through MiSTerKVMS Capture, at home or, paired, from anywhere.
 
 You also need:
 
@@ -131,8 +133,12 @@ Every push to `main` builds a universal DMG, a Windows zip and a Linux tarball a
 | `APPLE_API_ISSUER_ID` | Its issuer ID |
 | `APPLE_TEAM_ID` | Apple Team ID; with the API key (Admin role), the iPhone app goes to TestFlight |
 | `APPLE_DEV_CERT` | base64 Apple Development certificate (`.cer`) issued from the same CSR as the Developer ID one, so it pairs with `MACOS_CERT_P12`'s key: App Store archives are signed with it instead of a new certificate per run (`scripts/ci-app-store-keychain.sh`) |
+| `ANDROID_UPLOAD_KEYSTORE` | The Android app's upload key (PKCS12 `.jks`), base64 |
+| `ANDROID_KEYSTORE_PASSWORD` | Its password (the store's and the key's) |
+| `ANDROID_KEY_ALIAS` | The key's alias (`upload`) |
+| `PLAY_SERVICE_ACCOUNT_JSON` | Google Cloud service account key (JSON) allowed to release this app to Play's testing tracks |
 
-Without them the release is ad-hoc signed and not notarized. The iPhone app isn't in the GitHub release: on pushes to `main` that change it, it's uploaded to TestFlight (setup: [docs/IPHONE.md](docs/IPHONE.md) §6.1); without the secrets CI only checks that it builds. The Mac App Store build (sandboxed, client only, the iPhone app's listing) uploads the same way once the repository variable `MAC_APP_STORE_UPLOAD` is `true`: see [apple/AppStore/README.md](apple/AppStore/README.md).
+Without them the release is ad-hoc signed and not notarized. The iPhone app isn't in the GitHub release: on pushes to `main` that change it, it's uploaded to TestFlight (setup: [docs/IPHONE.md](docs/IPHONE.md) §6.1); without the secrets CI only checks that it builds. The Mac App Store build (sandboxed, client only, the iPhone app's listing) uploads the same way once the repository variable `MAC_APP_STORE_UPLOAD` is `true`: see [apple/AppStore/README.md](apple/AppStore/README.md). The Android app goes to Google Play's internal testing track the same way once the repository variable `PLAY_UPLOAD` is `true` (setup: [docs/ANDROID.md](docs/ANDROID.md) §4).
 
 ## Credits
 

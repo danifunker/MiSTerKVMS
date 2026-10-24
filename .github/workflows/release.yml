@@ -4,7 +4,8 @@ name: Build & Release
 # Cargo.toml plus an auto-incremented patch (1.0.0, 1.0.1, ...). Bump the
 # version in Cargo.toml to start a new series (e.g. 1.1.0, 2.0.0).
 # Pull requests only build and test. The iPhone app and the Mac App Store app
-# go to App Store Connect only when something they're built from changed
+# go to App Store Connect, and the Android app to Google Play's internal
+# testing track, only when something they're built from changed
 # (scripts/app-fingerprint.sh).
 # A push that only changes documentation publishes nothing: no build reads
 # docs/ or any .md file (LICENSE is bundled, so it isn't ignored). Its
@@ -20,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       testflight:
-        description: Upload the iPhone and Mac App Store apps even if they haven't changed
+        description: Upload the iPhone, Mac App Store and Android apps even if they haven't changed
         type: boolean
         default: false
 
@@ -41,6 +42,8 @@ jobs:
       ios_fingerprint: ${{ steps.apps.outputs.ios_fingerprint }}
       mac_changed: ${{ steps.apps.outputs.mac_changed }}
       mac_fingerprint: ${{ steps.apps.outputs.mac_fingerprint }}
+      android_changed: ${{ steps.apps.outputs.android_changed }}
+      android_fingerprint: ${{ steps.apps.outputs.android_fingerprint }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -55,9 +58,9 @@ jobs:
           echo "version=$base.$patch" >> "$GITHUB_OUTPUT"
           echo "Version $base.$patch"
 
-      # Each compared with its last upload (its testflight/<build> or
-      # testflight-mac/<build> tag).
-      - name: Have the App Store apps changed?
+      # Each compared with its last upload (its testflight/<build>,
+      # testflight-mac/<build> or play/<versionCode> tag).
+      - name: Have the store apps changed?
         id: apps
         env:
           FORCE: ${{ inputs.testflight }}
@@ -85,6 +88,7 @@ jobs:
           }
           check ios testflight
           check mac testflight-mac
+          check android play
 
   build-mac:
     needs: version
@@ -478,6 +482,95 @@ jobs:
           name: mac-appstore-xcodebuild-logs
           path: build/mac-appstore/xcodebuild-*.log
           if-no-files-found: ignore
+
+  # The Android app (android/). Like the iPhone app it goes to its store, not
+  # into the GitHub release, so it isn't part of publish and an Android
+  # problem never holds up the desktop release. Pull requests always build
+  # it (debug); main builds a signed bundle and uploads it to Google Play's
+  # internal testing track when it changed, the upload key and the service
+  # account are set, and the repository variable PLAY_UPLOAD is "true" (set
+  # once the first bundle was uploaded by hand: docs/ANDROID.md).
+  build-android:
+    needs: version
+    if: github.event_name == 'pull_request' || needs.version.outputs.android_changed == 'true'
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      # versionCode: only grows, as Play requires.
+      BUILD_NUMBER: ${{ github.run_number }}
+      # The NDK the core is built with (ndkVersion in android/app/build.gradle.kts).
+      NDK_VERSION: 30.0.16248370
+      UPLOAD: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.PLAY_UPLOAD == 'true' && secrets.ANDROID_UPLOAD_KEYSTORE != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Android SDK and NDK
+        run: |
+          sdkmanager=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          "$sdkmanager" --install "ndk;$NDK_VERSION" "platforms;android-37.0" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Rust toolchain (Android)
+        run: |
+          rustup toolchain install stable --profile minimal \
+            --target aarch64-linux-android --target x86_64-linux-android
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Build (debug)
+        if: env.UPLOAD != 'true'
+        run: scripts/build-android.sh
+
+      - name: Build the signed bundle
+        if: env.UPLOAD == 'true'
+        env:
+          ANDROID_UPLOAD_KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/upload.jks"
+          echo "$ANDROID_UPLOAD_KEYSTORE" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          scripts/build-android.sh --release
+
+      # Only the bundle: the store listing is kept by hand (the service
+      # account may only release to testing tracks).
+      - name: Upload to Google Play (internal testing)
+        if: env.UPLOAD == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.danifunker.misterkvms
+          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+          mappingFile: android/app/build/outputs/mapping/release/mapping.txt
+          releaseName: ${{ env.BUILD_NUMBER }} (${{ env.VERSION }})
+          track: internal
+          status: completed
+
+      # The next run compares against this upload.
+      - name: Tag the upload
+        if: env.UPLOAD == 'true'
+        env:
+          FINGERPRINT: ${{ needs.version.outputs.android_fingerprint }}
+        run: |
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            tag -a "play/$BUILD_NUMBER" -m "$FINGERPRINT" -m "MiSTerKVMS $VERSION ($BUILD_NUMBER) uploaded to Google Play (internal testing)"
+          git push origin "play/$BUILD_NUMBER"
+
+      - name: Remove the upload key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks"
 
   # Every platform built: publish them together.
   publish:

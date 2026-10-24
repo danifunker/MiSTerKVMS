@@ -81,17 +81,31 @@ cargo-ndk`. Works in Git Bash on Windows.
 
 ## 4. CI and Google Play
 
-Not written yet (D5). The plan, from ANDROID-HANDOFF.md:
+The `build-android` job in `.github/workflows/release.yml` runs with the
+others (`needs: version`). It isn't part of the GitHub release, and an
+Android failure doesn't hold the desktop release back.
 
-- A `build-android` job in `.github/workflows/release.yml` next to
-  `build-ios`, `needs: version`, not in `publish`'s needs.
-- Pull requests or missing secrets: a debug build. A push to `main` with
-  the secrets, the repository variable **`PLAY_UPLOAD`** = `true`, and the
-  app changed (`scripts/app-fingerprint.sh android`, compared with the
-  newest `play/<versionCode>` tag): a signed `.aab` to the internal track,
-  tagged `play/<versionCode>`.
+- Pull requests, or `main` without the secrets or `PLAY_UPLOAD`: a debug
+  build (`scripts/build-android.sh`), to check it builds.
+- A push to `main` (or a manual run on `main`) with the four secrets and
+  the repository variable **`PLAY_UPLOAD`** = `true`: a signed bundle
+  (`--release`), uploaded with `r0adkll/upload-google-play` to the
+  **internal** track with its R8 mapping, rolled out at once to the
+  internal testers. The keystore is decoded into `$RUNNER_TEMP` and removed
+  in an `always()` step. `versionName` is the release's (1.0.N),
+  `versionCode` the workflow run number.
+- Only when the app changed: `scripts/app-fingerprint.sh android` hashes
+  `android/`, `scripts/build-android.sh`, the workspace manifest,
+  uniffi-bindgen, our crates kvms-core compiles for Android and the
+  versions of the crates.io packages it links. Each upload is tagged
+  `play/<versionCode>` with that hash; the `version` job compares against
+  the newest such tag. To upload anyway, run the workflow by hand with
+  **Upload the iPhone, Mac App Store and Android apps** ticked.
+- The runner installs NDK `30.0.16248370` (the `ndkVersion` in Gradle) and
+  the API 37 platform; Java 21 (Temurin).
 - `PLAY_UPLOAD` stays off until the first bundle has been uploaded by hand:
-  the Play API refuses uploads before that.
+  the Play API refuses uploads before that. Promote to closed testing or
+  production by hand in Play Console.
 
 Secrets (set): `ANDROID_UPLOAD_KEYSTORE` (base64 `.jks`),
 `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`upload`),
@@ -99,7 +113,7 @@ Secrets (set): `ANDROID_UPLOAD_KEYSTORE` (base64 `.jks`),
 
 ### 4.1 Play Console setup
 
-Done on 23 Oct 2026:
+Done on 23–24 Oct 2026:
 
 1. **Developer account:** personal. It looked exempt from the 12-tester,
    14-day closed test (no "Apply for production access" checklist); check
@@ -114,14 +128,15 @@ Done on 23 Oct 2026:
    tracks* only.
 5. **Internal testing:** an email list of testers, ticked for the track.
 
-Still to do:
-
-6. **First bundle by hand** (D4): upload the `--release` `.aab` to Internal
-   testing and accept **Play App Signing** (Google keeps the app signing
+6. **First bundle by hand** (D4, done 24 Oct): `1 (1.0.15)` uploaded to
+   Internal testing with **Play App Signing** (Google keeps the app signing
    key; we keep the upload key). Then set `PLAY_UPLOAD`. Build it with
    `BUILD_NUMBER=1`: CI's versionCodes are workflow run numbers (46 so
    far), and Play refuses any upload whose versionCode isn't higher than
    the last one's, so a local default (the commit count, 132) would block CI.
+
+Still to do:
+
 7. **App content:** privacy policy (`docs/PRIVACY.md`, shared with iOS;
    not written yet), Data safety (nothing collected or shared), Ads (none),
    content rating, target audience (not children), App access (reviewers
@@ -138,6 +153,6 @@ Still to do:
 | D1 | Picture | Done on the emulator: the demo and MiSTer-SS1's stream. Sound not yet heard. |
 | D2 | Parity on the LAN | Done on the emulator (touchpad, keyboard, quick buttons, menus, discovery, settings); needs a real phone for discovery and three-finger gestures |
 | D3 | Internet | Done on the emulator: pairing at home, the key in the Keystore and back after a restart, encrypted connection. Not yet tried from outside (mobile data through `home.dani.tech:5970`): needs a phone |
-| D4 | Signed release build | |
-| D5 | CI | |
+| D4 | Signed release build | Done: `scripts/build-android.sh --release`, 20 MB bundle, R8-shrunk build checked on the emulator; `1 (1.0.15)` on Internal testing |
+| D5 | CI | `build-android` job written; uploads once `PLAY_UPLOAD` is set and a push changes the app |
 | D6 | Play listing | |
