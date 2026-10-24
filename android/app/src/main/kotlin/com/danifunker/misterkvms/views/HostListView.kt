@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Monitor
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -133,6 +134,8 @@ private fun HostRow(
                     modifier = Modifier
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f), CircleShape)
                         .padding(horizontal = 6.dp, vertical = 2.dp))
+            } else if (profile.useInternet) {
+                Icon(Icons.Outlined.Language, "Also over the internet", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         DropdownMenu(menuOpen, { menuOpen = false }) { menu { menuOpen = false } }

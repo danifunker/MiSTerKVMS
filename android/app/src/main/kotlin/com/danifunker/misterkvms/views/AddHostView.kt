@@ -11,11 +11,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import com.danifunker.misterkvms.model.StreamBrowser
+import com.danifunker.misterkvms.model.describe
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -58,7 +62,52 @@ fun AddHostView(model: AppModel, onDone: () -> Unit) {
         browser.start()
         onDispose { browser.stop() }
     }
+    var useInternet by model.prefs.bool("add.useInternet", false)
+    var settingUp by rememberSaveable { mutableStateOf<String?>(null) }
+    var askingName by remember { mutableStateOf(false) }
+    var pendingAdd by remember { mutableStateOf<(() -> Unit)?>(null) }
+    /** Added, but the internet part failed: say so, then close. */
+    var internetError by rememberSaveable { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     BackHandler(onBack = onDone)
+
+    /** With the internet switch on, the capture PC lists this phone by its
+     *  name: ask for a real one first. */
+    fun whenNamed(add: () -> Unit) {
+        if (useInternet && model.deviceNameIsDefault) {
+            pendingAdd = add
+            askingName = true
+        } else {
+            add()
+        }
+    }
+
+    fun save(name: String, address: String, mister: String) {
+        // The same address twice is one MiSTer: keep the saved one.
+        if (model.profiles.any { it.stream.equals(address, ignoreCase = true) }) {
+            onDone()
+            return
+        }
+        val profile = makeProfile(address).apply {
+            this.name = name
+            misterHost = mister
+        }
+        model.save(profile)
+        if (!useInternet) {
+            onDone()
+            return
+        }
+        settingUp = name
+        scope.launch {
+            try {
+                model.pairForInternet(profile)
+                onDone()
+            } catch (e: Exception) {
+                internetError = describe(e)
+            }
+            settingUp = null
+        }
+    }
 
     fun addTyped() {
         var text = address.trim()
@@ -68,28 +117,15 @@ fun AddHostView(model: AppModel, onDone: () -> Unit) {
             error = "Add the stream's name after the address: pc/MiSTer-SS1."
             return
         }
-        // The same address twice is one MiSTer: keep the saved one.
-        if (model.profiles.none { it.stream.equals(text, ignoreCase = true) }) {
-            profile.name = name.trim().ifEmpty { profile.streamName }
-            model.save(profile)
-        }
-        onDone()
+        val given = name.trim()
+        whenNamed { save(given.ifEmpty { profile.streamName }, text, "") }
     }
 
     /** Already in the list (same stream name on the same capture server). */
     fun isSaved(stream: StreamBrowser.Found) =
         model.profiles.any { it.streamName == stream.name && (stream.mister.isEmpty() || it.misterHost == stream.mister) }
 
-    fun add(stream: StreamBrowser.Found) {
-        // The same address twice is one MiSTer: keep the saved one.
-        if (model.profiles.none { it.stream.equals(stream.address, ignoreCase = true) }) {
-            model.save(makeProfile(stream.address).apply {
-                name = stream.name
-                misterHost = stream.mister
-            })
-        }
-        onDone()
-    }
+    fun add(stream: StreamBrowser.Found) = whenNamed { save(stream.name, stream.address, stream.mister) }
 
     Scaffold(
         topBar = {
@@ -100,6 +136,25 @@ fun AddHostView(model: AppModel, onDone: () -> Unit) {
         },
     ) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Also use over the internet", Modifier.weight(1f))
+                Switch(useInternet, { useInternet = it }, enabled = settingUp == null)
+            }
+            settingUp?.let {
+                Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text("Setting up $it for the internet…", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 12.dp))
+                }
+            }
+            Text(
+                "Pairs this phone with the capture PC (once per capture PC), so the MiSTer works from anywhere, " +
+                    "encrypted. Needs “Allow connections from the internet” on the capture PC's setup page.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 24.dp),
+            )
+
             Text("On this network", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             if (browser.found.isEmpty()) {
                 Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -111,7 +166,7 @@ fun AddHostView(model: AppModel, onDone: () -> Unit) {
             browser.found.forEach { stream ->
                 val saved = isSaved(stream)
                 Row(
-                    Modifier.fillMaxWidth().clickable(enabled = !saved) { add(stream) }.padding(vertical = 10.dp),
+                    Modifier.fillMaxWidth().clickable(enabled = !saved && settingUp == null) { add(stream) }.padding(vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -146,7 +201,7 @@ fun AddHostView(model: AppModel, onDone: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
             )
-            Button(::addTyped, Modifier.padding(top = 16.dp), enabled = address.isNotBlank()) { Text("Add") }
+            Button(::addTyped, Modifier.padding(top = 16.dp), enabled = address.isNotBlank() && settingUp == null) { Text("Add") }
         }
     }
 
@@ -157,6 +212,21 @@ fun AddHostView(model: AppModel, onDone: () -> Unit) {
             title = { Text("Can't add it") },
             text = { Text(it) },
         )
+    }
+    internetError?.let {
+        AlertDialog(
+            onDismissRequest = { internetError = null; onDone() },
+            confirmButton = { TextButton({ internetError = null; onDone() }) { Text("OK") } },
+            title = { Text("Added, without the internet") },
+            text = { Text("$it\n\nTry again later from the MiSTer's settings (long-press it in the list).") },
+        )
+    }
+    if (askingName) {
+        NameThisPhone(model, onCancel = { askingName = false; pendingAdd = null }) {
+            askingName = false
+            pendingAdd?.invoke()
+            pendingAdd = null
+        }
     }
 }
 

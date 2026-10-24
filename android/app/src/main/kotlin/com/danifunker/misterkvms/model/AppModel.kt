@@ -29,6 +29,8 @@ import com.danifunker.misterkvms.core.MouseButton
 import com.danifunker.misterkvms.core.NativeSurface
 import com.danifunker.misterkvms.core.StreamLimits
 import com.danifunker.misterkvms.core.demoHostProfile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -81,8 +83,10 @@ class AppModel(private val app: Application) {
     private var suspendedId: String? = null
 
     private val demoModeState = prefs.bool(Pref.DEMO_MODE, false)
+    private val keys = DeviceKeystore(app)
 
     init {
+        loadKeys()
         // A touch screen captures as soon as a host connects (D6), whatever
         // the desktop apps' Capture automatically setting says.
         core.forceAutoCapture()
@@ -104,6 +108,7 @@ class AppModel(private val app: Application) {
             ControllerEvent.PROFILES_CHANGED -> {
                 profiles = core.profiles()
                 state = core.state()
+                saveMovedKeys()
             }
             // A touch screen is always "capturing" while connected (D6).
             ControllerEvent.CAPTURE_REQUESTED ->
@@ -136,8 +141,10 @@ class AppModel(private val app: Application) {
     fun save(profile: HostProfile) = core.saveProfile(profile)
 
     fun delete(id: String) {
+        val server = core.deviceKeyServer(id)
         core.deleteProfile(id)
         profiles = core.profiles()
+        if (profiles.none { it.useInternet && core.deviceKeyServer(it.id) == server }) keys.delete(server)
     }
 
     // MARK: Demo (docs/APP-STORE.md S1)
@@ -189,6 +196,60 @@ class AppModel(private val app: Application) {
     private fun defaultDeviceName(): String =
         Settings.Global.getString(app.contentResolver, Settings.Global.DEVICE_NAME)
             ?.takeIf { it.isNotBlank() } ?: Build.MODEL
+
+    // MARK: Over the internet (docs/IPHONE.md §2–3)
+
+    /** This phone holds a key for the MiSTer's capture PC. */
+    fun isPaired(profile: HostProfile): Boolean = core.hasDeviceKey(profile.id)
+
+    /** Use the MiSTer over the internet: reuses this phone's key for its
+     *  capture PC, or pairs (on the home network) and keeps the new key in
+     *  the Keystore. `again`: a new key, e.g. after the capture PC revoked
+     *  the old one. Throws the server's own explanation, e.g. internet
+     *  access turned off on the capture PC. */
+    suspend fun pairForInternet(profile: HostProfile, again: Boolean = false) {
+        val id = profile.id
+        val name = deviceName
+        val result = withContext(Dispatchers.IO) { core.pairDevice(id, name, again) }
+        val have = keys.load(result.serverId)
+        if (!result.reused || have == null) {
+            if (!keys.save(DeviceKeystore.Entry(result.keyId, result.key), result.serverId)) {
+                // Without the key saved, the next launch couldn't connect from outside.
+                core.stopInternet(id)
+                profiles = core.profiles()
+                throw IllegalStateException("this phone couldn't keep the key in its Keystore")
+            }
+        }
+        profiles = core.profiles()
+    }
+
+    /** Stop connecting this MiSTer from the internet. The key goes too when
+     *  no other MiSTer of the same capture PC uses it. (The capture PC's
+     *  setup page can revoke it there.) */
+    fun stopInternet(profile: HostProfile) {
+        val server = core.deviceKeyServer(profile.id)
+        if (!core.stopInternet(profile.id)) keys.delete(server)
+        profiles = core.profiles()
+    }
+
+    /** Keys from the Keystore, one per capture PC (the core never stores them). */
+    private fun loadKeys() {
+        for (profile in profiles.filter { it.useInternet }) {
+            val server = core.deviceKeyServer(profile.id)
+            keys.load(server)?.let { core.setDeviceKey(server, it.keyId, it.key) }
+        }
+    }
+
+    /** A key kept by a capture PC's address moves to its id once the core
+     *  learns the id: keep the Keystore in step. */
+    private fun saveMovedKeys() {
+        for (profile in profiles.filter { it.useInternet }) {
+            val server = core.deviceKeyServer(profile.id)
+            if (keys.load(server) == null) {
+                core.deviceKey(server)?.let { keys.save(DeviceKeystore.Entry(it.keyId, it.key), server) }
+            }
+        }
+    }
 
     // MARK: Predictive cursor
 

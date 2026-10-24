@@ -23,6 +23,7 @@ Decisions (October 2026):
 
 | Where | What |
 |---|---|
+| `model/DeviceKeystore.kt` | Device keys, one per capture PC, each sealed with AES-GCM under a key that lives in the Android Keystore and never leaves it; the sealed copies are in the app's storage, which isn't backed up. The iPhone app's `DeviceKeychain`. |
 | `core/src/android.rs` | JNI functions for the app's `AndroidCore`: `init` (the JVM and app context for cpal, the settings folder, `log` to logcat), `windowFromSurface` / `releaseWindow`. The core's own log goes to logcat, tag `kvms` (`adb logcat -s kvms`). |
 | `core/uniffi.toml` | The bindings' package (`com.danifunker.misterkvms.core`) and three Kotlin-only renames: `Controller.close` → `closeHost` (AutoCloseable has `close`), the errors' `message` → `reason` (Throwable has `message`). |
 | `android/` | The Gradle project (Gradle 9.8.2 wrapper, AGP 9.4.1 with its built-in Kotlin 2.4.21, Compose). |
@@ -133,7 +134,7 @@ Still to do:
 | D0 | Core on Android | Done |
 | D1 | Picture | Done on the emulator: the demo and MiSTer-SS1's stream. Sound not yet heard. |
 | D2 | Parity on the LAN | Done on the emulator (touchpad, keyboard, quick buttons, menus, discovery, settings); needs a real phone for discovery and three-finger gestures |
-| D3 | Internet | Pairing, keys in the Keystore, secure transport |
+| D3 | Internet | Done on the emulator: pairing at home, the key in the Keystore and back after a restart, encrypted connection. Not yet tried from outside (mobile data through `home.dani.tech:5970`): needs a phone |
 | D4 | Signed release build | |
 | D5 | CI | |
 | D6 | Play listing | |
