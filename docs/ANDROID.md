@@ -137,8 +137,8 @@ Done on 23–24 Oct 2026:
 
 Still to do:
 
-7. **App content:** privacy policy (`docs/PRIVACY.md`, shared with iOS;
-   not written yet), Data safety (nothing collected or shared), Ads (none),
+7. **App content:** privacy policy (`docs/PRIVACY.md`, shared with iOS:
+   https://github.com/danifunker/MiSTerKVMS/blob/main/docs/PRIVACY.md), Data safety (nothing collected or shared), Ads (none),
    content rating, target audience (not children), App access (reviewers
    use demo mode: "Try it without a MiSTer").
 8. **Store listing:** short description (80 characters), full description
