@@ -16,7 +16,7 @@ val appVersionCode = providers.gradleProperty("versionCode").getOrElse("1").toIn
 // store and the key. Without it release builds are unsigned.
 val keystore = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
 val keystorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
-val keyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
+val uploadKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
 
 android {
     namespace = "com.danifunker.misterkvms"
@@ -40,11 +40,11 @@ android {
     }
 
     signingConfigs {
-        if (keystore != null && keystorePassword != null && keyAlias != null) {
+        if (keystore != null && keystorePassword != null && uploadKeyAlias != null) {
             create("upload") {
                 storeFile = file(keystore)
                 storePassword = keystorePassword
-                this.keyAlias = keyAlias
+                keyAlias = uploadKeyAlias
                 keyPassword = keystorePassword
             }
         }
