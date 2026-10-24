@@ -21,6 +21,9 @@ val keyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
 android {
     namespace = "com.danifunker.misterkvms"
     compileSdk = 37
+    // The NDK the core is built with; AGP strips the core's debug info
+    // with it (CI installs the same one).
+    ndkVersion = "30.0.16248370"
 
     defaultConfig {
         applicationId = "com.danifunker.misterkvms"
@@ -29,7 +32,11 @@ android {
         targetSdk = playTargetSdk
         versionCode = appVersionCode
         versionName = appVersionName
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+            // Play's crash reports name the core's functions.
+            debugSymbolLevel = "SYMBOL_TABLE"
+        }
     }
 
     signingConfigs {

@@ -118,7 +118,10 @@ Still to do:
 
 6. **First bundle by hand** (D4): upload the `--release` `.aab` to Internal
    testing and accept **Play App Signing** (Google keeps the app signing
-   key; we keep the upload key). Then set `PLAY_UPLOAD`.
+   key; we keep the upload key). Then set `PLAY_UPLOAD`. Build it with
+   `BUILD_NUMBER=1`: CI's versionCodes are workflow run numbers (46 so
+   far), and Play refuses any upload whose versionCode isn't higher than
+   the last one's, so a local default (the commit count, 132) would block CI.
 7. **App content:** privacy policy (`docs/PRIVACY.md`, shared with iOS;
    not written yet), Data safety (nothing collected or shared), Ads (none),
    content rating, target audience (not children), App access (reviewers
