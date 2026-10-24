@@ -417,7 +417,15 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
+/// Where the app keeps its settings and log: on Android, the app's files
+/// folder (`AndroidCore.init`).
+#[cfg(target_os = "android")]
+pub fn config_dir() -> Option<PathBuf> {
+    crate::android::files_dir()
+}
+
 /// Where the app keeps its settings and log.
+#[cfg(not(target_os = "android"))]
 pub fn config_dir() -> Option<PathBuf> {
     let env = |k| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
     if cfg!(windows) {

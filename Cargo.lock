@@ -1742,6 +1742,7 @@ dependencies = [
  "jni-sys 0.4.1",
  "kvms-capture",
  "kvms-codec",
+ "log",
  "mdns-sd",
  "mkvm",
  "ndk-context",

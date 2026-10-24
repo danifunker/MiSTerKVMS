@@ -147,7 +147,13 @@ pub struct Renderer {
 pub unsafe fn create_surface(
     target: &NativeSurface,
 ) -> Result<(wgpu::Instance, Option<wgpu::Surface<'static>>), String> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    if cfg!(target_os = "android") {
+        // Every 64-bit Android 10+ phone has Vulkan; GL's EGL surface fails
+        // on the SurfaceView's window (BadAlloc, seen on the emulator).
+        descriptor.backends = wgpu::Backends::VULKAN;
+    }
+    let instance = wgpu::Instance::new(descriptor);
     let ptr = |v: u64, what: &str| NonNull::new(v as usize as *mut c_void).ok_or(format!("null {what}"));
     let raw = |display, window| wgpu::SurfaceTargetUnsafe::RawHandle {
         raw_display_handle: Some(display),

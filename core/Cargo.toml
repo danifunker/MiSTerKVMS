@@ -34,6 +34,8 @@ if-addrs = "0.13"
 # The JNI functions in android.rs; both already come with cpal on Android.
 jni-sys = "0.4"
 ndk-context = "0.1"
+# wgpu's and cpal's warnings, to logcat.
+log = "0.4"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

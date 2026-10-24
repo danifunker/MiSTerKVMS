@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A display, inside the adaptive icon's 66dp safe zone. Placeholder until
+     the store icon (docs/ANDROID-HANDOFF.md D6). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M32,36h44a4,4 0,0 1,4 4v26a4,4 0,0 1,-4 4H58v4h8v3H42v-3h8v-4H32a4,4 0,0 1,-4 -4V40a4,4 0,0 1,4 -4zM32,40v26h44V40z" />
+</vector>

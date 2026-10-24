@@ -18,6 +18,12 @@
 /ios/MiSTerKVMS/Generated/
 xcuserdata/
 
-# Android app: the core and its bindings (scripts/build-android.sh)
+# Android app: the core and its bindings (scripts/build-android.sh), Gradle's output
 /android/app/src/main/jniLibs/
-/android/app/src/generated/
+/android/app/src/main/kotlin/com/danifunker/misterkvms/core/
+/android/.gradle/
+/android/.kotlin/
+/android/.idea/
+/android/build/
+/android/app/build/
+/android/local.properties

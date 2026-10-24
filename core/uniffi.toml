@@ -1,2 +1,9 @@
 [bindings.kotlin]
 package_name = "com.danifunker.misterkvms.core"
+
+# Names Kotlin already has: every object gets AutoCloseable's close(), and
+# every error Throwable's message.
+[bindings.kotlin.rename]
+"Controller.close" = "close_host"
+"ControllerError.Failed.message" = "reason"
+"VideoError.Graphics.message" = "reason"
