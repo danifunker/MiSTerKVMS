@@ -1,37 +1,49 @@
 package com.danifunker.misterkvms.model
 
 import android.app.Application
-import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.FileProvider
 import com.danifunker.misterkvms.AndroidCore
 import com.danifunker.misterkvms.core.ConnectionState
 import com.danifunker.misterkvms.core.Controller
 import com.danifunker.misterkvms.core.ControllerEvent
+import com.danifunker.misterkvms.core.ControllerException
 import com.danifunker.misterkvms.core.ControllerObserver
 import com.danifunker.misterkvms.core.ControllerState
 import com.danifunker.misterkvms.core.HostProfile
+import com.danifunker.misterkvms.core.MouseButton
 import com.danifunker.misterkvms.core.NativeSurface
 import com.danifunker.misterkvms.core.StreamLimits
 import com.danifunker.misterkvms.core.demoHostProfile
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * UI-facing state for the app: the saved hosts and the one open session.
  * The session logic lives in the core's Controller (as on the iPhone); this
  * mirrors its state for Compose and adds what's Android-specific: the video
- * surface, audio focus and the app lifecycle. Used on the main thread only.
+ * surface, touch input, the on-screen modifiers, audio focus and the app
+ * lifecycle. Used on the main thread only.
  */
 class AppModel(private val app: Application) {
     private val main = Handler(Looper.getMainLooper())
-    private val prefs = app.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    val prefs = PrefStore(app)
 
     val core: Controller = Controller(object : ControllerObserver {
         // Core events come on background threads.
@@ -45,8 +57,15 @@ class AppModel(private val app: Application) {
     var profiles: List<HostProfile> by mutableStateOf(core.profiles())
         private set
 
+    /** Function bar modifiers (HID usages): latched ones apply to the next
+     *  key only, locked ones until tapped again. */
+    var latched: Set<UShort> by mutableStateOf(emptySet())
+        private set
+    var locked: Set<UShort> by mutableStateOf(emptySet())
+        private set
+
     /** The first-run screen: try the demo, or go on to the MiSTers. */
-    var showWelcome by mutableStateOf(!prefs.getBoolean(Pref.WELCOMED, false))
+    var showWelcome by mutableStateOf(!prefs.bool(Pref.WELCOMED, false).value)
         private set
 
     /** Control given up from here: no input is sent (it would take control
@@ -54,23 +73,29 @@ class AppModel(private val app: Application) {
     var watching by mutableStateOf(false)
         private set
 
+    /** "Screenshot copied" (or why not) over the picture for a moment. */
+    var screenshotNotice: String? by mutableStateOf(null)
+        private set
+
     /** The host that was open when the app went to the background. */
     private var suspendedId: String? = null
 
-    private var demoModeState by mutableStateOf(prefs.getBoolean(Pref.DEMO_MODE, false))
+    private val demoModeState = prefs.bool(Pref.DEMO_MODE, false)
 
     init {
-        // A touch screen captures as soon as a host connects, whatever the
-        // desktop apps' Capture automatically setting says.
+        // A touch screen captures as soon as a host connects (D6), whatever
+        // the desktop apps' Capture automatically setting says.
         core.forceAutoCapture()
         if (showWelcome && profiles.any { !it.isDemo }) {
-            prefs.edit().putBoolean(Pref.WELCOMED, true).apply()
+            // Set up before the first-run screen existed.
+            prefs.bool(Pref.WELCOMED, false).value = true
             showWelcome = false
         }
         syncDemoHost()
         // Other viewers see this name ("Pixel 9 has control"). The core
         // falls back to "MiSTerKVMS" where it can't read a computer name.
         if (core.viewerName() == "MiSTerKVMS") core.setViewerName(defaultDeviceName())
+        watchNetwork()
     }
 
     private fun handle(event: ControllerEvent) {
@@ -80,7 +105,7 @@ class AppModel(private val app: Application) {
                 profiles = core.profiles()
                 state = core.state()
             }
-            // A touch screen is always "capturing" while connected.
+            // A touch screen is always "capturing" while connected (D6).
             ControllerEvent.CAPTURE_REQUESTED ->
                 if (!someoneElseInControl && !watching) core.setCapturing(true)
             ControllerEvent.RELEASE_REQUESTED -> core.setCapturing(false)
@@ -94,12 +119,13 @@ class AppModel(private val app: Application) {
 
     val isConnected: Boolean get() = state.connection is ConnectionState.Connected
 
+    /** This phone's input reaches the MiSTer: connected to a capture server
+     *  stream, not watching, nobody else in control. */
+    val inControl: Boolean get() = state.stream != null && !watching && !someoneElseInControl
+
     /** A capture server stream that someone else controls. */
     val someoneElseInControl: Boolean
         get() = state.stream?.let { !it.haveControl && it.holder.isNotEmpty() } ?: false
-
-    /** This phone's input reaches the MiSTer. */
-    val inControl: Boolean get() = state.stream != null && !watching && !someoneElseInControl
 
     var muted: Boolean
         get() = state.muted
@@ -119,10 +145,9 @@ class AppModel(private val app: Application) {
     /** The Demo host is in the list: the test pattern, with the input it
      *  receives listed on screen instead of sent to a MiSTer. */
     var demoMode: Boolean
-        get() = demoModeState
+        get() = demoModeState.value
         set(value) {
-            demoModeState = value
-            prefs.edit().putBoolean(Pref.DEMO_MODE, value).apply()
+            demoModeState.value = value
             if (!value && profile?.isDemo == true) close()
             syncDemoHost()
         }
@@ -131,7 +156,7 @@ class AppModel(private val app: Application) {
 
     /** The first-run screen's answer: `demo` turns demo mode on and opens it. */
     fun welcomed(demo: Boolean) {
-        prefs.edit().putBoolean(Pref.WELCOMED, true).apply()
+        prefs.bool(Pref.WELCOMED, false).value = true
         showWelcome = false
         if (demo) {
             demoMode = true
@@ -150,10 +175,33 @@ class AppModel(private val app: Application) {
         profiles = core.profiles()
     }
 
+    // MARK: This phone's name
+
+    /** Shown on the capture PC's list of paired devices and to other viewers
+     *  ("Dani's Pixel has control"). */
+    var deviceName: String
+        get() = core.viewerName()
+        set(value) = core.setViewerName(value.trim().ifEmpty { defaultDeviceName() })
+
+    /** Still the generic name: ask for a real one before pairing. */
+    val deviceNameIsDefault: Boolean get() = deviceName == defaultDeviceName()
+
+    private fun defaultDeviceName(): String =
+        Settings.Global.getString(app.contentResolver, Settings.Global.DEVICE_NAME)
+            ?.takeIf { it.isNotBlank() } ?: Build.MODEL
+
+    // MARK: Predictive cursor
+
+    /** For the route in use: the core keeps home's and the internet's apart. */
+    var predictiveCursor: Boolean
+        get() = state.display.predictiveCursor
+        set(value) = core.setDisplay(state.display.copy(predictiveCursor = value))
+
     // MARK: Session
 
     fun open(profile: HostProfile) {
         if (profile.id == state.profileId) return
+        latched = emptySet()
         watching = false
         requestAudioFocus()
         core.open(profile.id)
@@ -196,18 +244,27 @@ class AppModel(private val app: Application) {
         profiles.firstOrNull { it.id == id }?.let { open(it) }
     }
 
-    fun takeControl() {
-        watching = false
-        core.takeControl()
-        core.setCapturing(true)
+    /** Wi-Fi ↔ mobile data: open the MiSTer again, so the core picks the
+     *  route (home or internet) for the new network. */
+    private fun watchNetwork() {
+        var current: Network? = null
+        app.getSystemService(ConnectivityManager::class.java)
+            .registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    val changed = current != null && current != network
+                    current = network
+                    if (changed) main.post { reconnect() }
+                }
+            })
     }
 
-    /** Let another viewer have the MiSTer; this phone only watches. */
-    fun releaseControl() {
-        watching = true
+    private fun reconnect() {
+        val p = profile ?: return
+        if (p.isDemo) return
         core.releaseAll()
-        core.releaseControl()
-        core.setCapturing(false)
+        core.closeHost()
+        core.open(p.id)
+        state = core.state()
     }
 
     // MARK: Video surface
@@ -216,7 +273,7 @@ class AppModel(private val app: Application) {
     private var window = 0L
 
     /** The surface exists, or changed size: draw into it. */
-    fun surfaceChanged(surface: android.view.Surface, widthPx: Int, heightPx: Int, density: Float) {
+    fun surfaceChanged(surface: Surface, widthPx: Int, heightPx: Int, density: Float) {
         if (window == 0L) {
             window = AndroidCore.windowFromSurface(surface)
             if (window == 0L) return
@@ -237,9 +294,134 @@ class AppModel(private val app: Application) {
         window = 0L
     }
 
-    /** No bigger picture than the phone shows: the server scales it down. */
+    /** No bigger picture than the phone shows: the server scales it down
+     *  (1080p → 720p in portrait), a third of the data. */
     private fun askForScreenSize(widthPx: Int, heightPx: Int) {
         core.setStreamLimits(StreamLimits(widthPx.toUInt(), heightPx.toUInt(), null, null))
+    }
+
+    // MARK: Input
+
+    /** Input from a viewer without control is dropped by the server; the
+     *  first input on a free stream takes control (CAPTURE-SERVER.md §7). */
+    private fun ready(): Boolean {
+        if (!isConnected || someoneElseInControl || watching) return false
+        if (!state.capturing) core.setCapturing(true)
+        return true
+    }
+
+    fun takeControl() {
+        watching = false
+        core.takeControl()
+        core.setCapturing(true)
+    }
+
+    /** Let another viewer have the MiSTer; this phone only watches. */
+    fun releaseControl() {
+        watching = true
+        core.releaseAll()
+        core.releaseControl()
+        core.setCapturing(false)
+    }
+
+    fun openMenu() {
+        if (ready()) core.openMenu()
+    }
+
+    /** Text from the soft keyboard. */
+    fun type(text: String) {
+        if (ready()) core.typeText(text, takeModifiers())
+    }
+
+    /** A key from the function bar or the quick buttons, with the modifiers held. */
+    fun tap(usage: UShort) {
+        if (!ready()) return
+        val modifiers = takeModifiers()
+        if (modifiers.isEmpty()) core.tapKey(usage) else core.pressCombo(modifiers + usage)
+    }
+
+    /** The Type Text screen: `text` typed key by key at `keysPerSec`
+     *  (remembered for the host by the core). */
+    fun typeText(text: String, keysPerSec: Double) {
+        if (ready()) core.typeTextAt(text, keysPerSec)
+    }
+
+    fun move(dx: Double, dy: Double) {
+        if (ready()) core.mouseMove(dx, dy)
+    }
+
+    fun button(button: MouseButton, down: Boolean) {
+        if (ready()) core.mouseButton(button, down)
+    }
+
+    fun click(button: MouseButton) {
+        if (ready()) core.click(button)
+    }
+
+    fun zoom(factor: Double) = core.zoomBy(factor)
+    fun resetZoom() = core.resetZoom()
+
+    /** Pan by a fraction of the picture. */
+    fun pan(dx: Double, dy: Double) = core.panBy(dx, dy)
+
+    // MARK: Function bar modifiers
+
+    enum class ModifierState { OFF, LATCHED, LOCKED }
+
+    fun modifierState(usage: UShort): ModifierState = when (usage) {
+        in locked -> ModifierState.LOCKED
+        in latched -> ModifierState.LATCHED
+        else -> ModifierState.OFF
+    }
+
+    /** Tap cycles off → next key only → locked → off. */
+    fun cycleModifier(usage: UShort) {
+        when (modifierState(usage)) {
+            ModifierState.OFF -> latched = latched + usage
+            ModifierState.LATCHED -> {
+                latched = latched - usage
+                locked = locked + usage
+            }
+            ModifierState.LOCKED -> locked = locked - usage
+        }
+    }
+
+    private fun takeModifiers(): List<UShort> {
+        val all = (latched + locked).sorted()
+        latched = emptySet()
+        return all
+    }
+
+    // MARK: Screenshots
+
+    private var noticeGeneration = 0
+
+    /** Screenshots get a bar with the core and the time. */
+    var screenshotStamp: Boolean
+        get() = core.screenshotStamp()
+        set(value) = core.setScreenshotStamp(value)
+
+    /** The picture as it is now, onto the clipboard as a PNG. */
+    fun copyScreenshot() {
+        val notice = try {
+            val takenAt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+            val shot = core.screenshot(takenAt)
+            // The clipboard holds a link to the file, not the picture.
+            val file = File(app.cacheDir, "screenshots/MiSTerKVMS screenshot.png")
+            file.parentFile?.mkdirs()
+            file.writeBytes(shot.png)
+            val uri = FileProvider.getUriForFile(app, "${app.packageName}.screenshots", file)
+            app.getSystemService(ClipboardManager::class.java)
+                .setPrimaryClip(ClipData.newUri(app.contentResolver, "Screenshot", uri))
+            "Screenshot copied"
+        } catch (e: ControllerException.Failed) {
+            "No screenshot: ${e.reason}"
+        } catch (e: Exception) {
+            "No screenshot: ${e.message}"
+        }
+        val generation = ++noticeGeneration
+        screenshotNotice = notice
+        main.postDelayed({ if (noticeGeneration == generation) screenshotNotice = null }, 2000)
     }
 
     // MARK: Audio focus
@@ -255,12 +437,6 @@ class AppModel(private val app: Application) {
 
     private fun requestAudioFocus() { audio.requestAudioFocus(focus) }
     private fun abandonAudioFocus() { audio.abandonAudioFocusRequest(focus) }
-
-    // MARK: This phone's name
-
-    private fun defaultDeviceName(): String =
-        Settings.Global.getString(app.contentResolver, Settings.Global.DEVICE_NAME)
-            ?.takeIf { it.isNotBlank() } ?: Build.MODEL
 }
 
 /** The demo host (core: `demo_host_profile`). */
@@ -281,3 +457,7 @@ val HostProfile.subtitle: String
         misterHost.isNotEmpty() -> misterHost
         else -> "No stream chosen"
     }
+
+/** What the core says went wrong, for an alert. */
+fun describe(error: Throwable): String =
+    (error as? ControllerException.Failed)?.reason ?: error.message ?: error.toString()

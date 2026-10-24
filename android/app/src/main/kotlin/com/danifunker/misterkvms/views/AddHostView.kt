@@ -1,9 +1,21 @@
 package com.danifunker.misterkvms.views
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import com.danifunker.misterkvms.model.StreamBrowser
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -32,14 +44,20 @@ import com.danifunker.misterkvms.core.newHostProfile
 import com.danifunker.misterkvms.model.AppModel
 import com.danifunker.misterkvms.model.streamName
 
-/** Add a MiSTer by its stream's address (`host[:port]/stream`). Streams
- *  found on the network come in D2 (docs/ANDROID-HANDOFF.md). */
+/** Add a MiSTer: a stream found on the network, or one typed by address
+ *  (`host[:port]/stream`) where discovery doesn't reach. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddHostView(model: AppModel, onDone: () -> Unit) {
     var address by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val browser = remember { StreamBrowser(context) }
+    DisposableEffect(browser) {
+        browser.start()
+        onDispose { browser.stop() }
+    }
     BackHandler(onBack = onDone)
 
     fun addTyped() {
@@ -58,6 +76,21 @@ fun AddHostView(model: AppModel, onDone: () -> Unit) {
         onDone()
     }
 
+    /** Already in the list (same stream name on the same capture server). */
+    fun isSaved(stream: StreamBrowser.Found) =
+        model.profiles.any { it.streamName == stream.name && (stream.mister.isEmpty() || it.misterHost == stream.mister) }
+
+    fun add(stream: StreamBrowser.Found) {
+        // The same address twice is one MiSTer: keep the saved one.
+        if (model.profiles.none { it.stream.equals(stream.address, ignoreCase = true) }) {
+            model.save(makeProfile(stream.address).apply {
+                name = stream.name
+                misterHost = stream.mister
+            })
+        }
+        onDone()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -66,8 +99,32 @@ fun AddHostView(model: AppModel, onDone: () -> Unit) {
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding).padding(16.dp)) {
-            Text("By address", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
+            Text("On this network", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            if (browser.found.isEmpty()) {
+                Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text("Looking for capture servers…", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 12.dp))
+                }
+            }
+            browser.found.forEach { stream ->
+                val saved = isSaved(stream)
+                Row(
+                    Modifier.fillMaxWidth().clickable(enabled = !saved) { add(stream) }.padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stream.name)
+                        Text(if (stream.mister.isEmpty()) stream.server else "${stream.mister} on ${stream.server}",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (saved) Icon(Icons.Filled.Check, "Added", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            Text("By address", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 24.dp))
             OutlinedTextField(
                 address, { address = it },
                 Modifier.fillMaxWidth().padding(top = 8.dp),

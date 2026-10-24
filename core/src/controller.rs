@@ -1758,6 +1758,10 @@ fn tick_loop(inner: Weak<Inner>) {
 
 /// The computer's name, for other viewers to see.
 fn computer_name() -> String {
+    // Android answers "localhost": the app names the phone itself.
+    if cfg!(target_os = "android") {
+        return "MiSTerKVMS".into();
+    }
     let from_env = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default();
     if !from_env.trim().is_empty() {
         return from_env.trim().to_string();

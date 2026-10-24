@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Monitor
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -52,14 +53,20 @@ import com.danifunker.misterkvms.model.subtitle
 @Composable
 fun HostListView(model: AppModel) {
     var adding by rememberSaveable { mutableStateOf(false) }
-    if (adding) {
-        AddHostView(model, onDone = { adding = false })
-        return
+    var appSettings by rememberSaveable { mutableStateOf(false) }
+    var settingsFor by rememberSaveable { mutableStateOf<String?>(null) }
+    when {
+        adding -> return AddHostView(model, onDone = { adding = false })
+        appSettings -> return AppSettingsView(model, onDone = { appSettings = false })
+        settingsFor != null -> return HostSettingsView(model, settingsFor!!, onDone = { settingsFor = null })
     }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("MiSTerKVMS") },
+                navigationIcon = {
+                    IconButton({ appSettings = true }) { Icon(Icons.Outlined.Settings, "Settings") }
+                },
                 actions = {
                     IconButton({ adding = true }) { Icon(Icons.Filled.Add, "Add a MiSTer") }
                 },
@@ -83,6 +90,11 @@ fun HostListView(model: AppModel) {
             }
             items(model.profiles.filter { !it.isDemo }, key = { it.id }) { profile ->
                 HostRow(profile, demo = false, onOpen = { model.open(profile) }) { close ->
+                    DropdownMenuItem(
+                        text = { Text("Settings") },
+                        leadingIcon = { Icon(Icons.Outlined.Settings, null) },
+                        onClick = { close(); settingsFor = profile.id },
+                    )
                     DropdownMenuItem(
                         text = { Text("Delete") },
                         leadingIcon = { Icon(Icons.Outlined.Delete, null) },
