@@ -157,6 +157,12 @@ fn start(id: &str, tx: Tx) -> Result<(cpal::Stream, u16, u32), CaptureError> {
     };
     let err_tx = tx.clone();
     let on_error = move |e: cpal::Error| {
+        // A glitch, not a lost device: the stream keeps delivering. Stopping
+        // here (and reopening) turned one glitch into a dead stream, since
+        // the error arrives before the buffer it belongs to.
+        if e.kind() == cpal::ErrorKind::Xrun {
+            return;
+        }
         let _ = err_tx.try_send(Err(CaptureError::Lost(e.to_string())));
     };
     let stream = match format {
