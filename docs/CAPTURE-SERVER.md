@@ -52,7 +52,7 @@ clients' local capture and the CLI run the same code:
 
 | Crate | Kind | Contents | Used by |
 |---|---|---|---|
-| `capture/` | lib | One `VideoCapture` over per-OS backends: Media Foundation (USB sticks), DirectShow (cards Media Foundation can't open, e.g. GC573, including their audio pin), AVFoundation (macOS), V4L2 (Linux, raw ioctls, MJPEG passed through); audio via `cpal` (ALSA on Linux); stable device IDs; "in use by another app" detection | server, core (local capture), CLI |
+| `capture/` | lib | One `VideoCapture` over per-OS backends: Media Foundation (USB sticks), DirectShow (cards Media Foundation can't open, e.g. GC573, including their audio pin), AVFoundation (macOS), V4L2 (Linux, raw ioctls, MJPEG passed through); audio straight from the driver where it can (§5.7), else `cpal`; stable device IDs; "in use by another app" detection | server, core (local capture), CLI |
 | `codec/` | lib | JPEG decode (`zune-jpeg`) and encode (`turbojpeg`); H.264 encode/decode through the OS (Media Foundation, VideoToolbox, VA-API) and `openh264`; scaling (integer box, area) | server, core |
 | `mkvm/` | lib | protocol types, frame parser, client and server connection state machines, control token logic | server, core, CLI, later the OBS plugin |
 | `server/` | bin `misterkvms-capture` | streams, viewers, pipelines, mrext sessions, setup page, service install | — |
@@ -276,6 +276,52 @@ The installer adds the firewall rules.
   by hand: ports, `allow_lan` and the setup password.
   The CLI (`misterkvms-capture devices | add | serve | service <action>`)
   stays for scripting.
+
+
+### 5.7 Audio without the system's sound stack
+
+The server's audio never goes to its own speakers; it goes to viewers only,
+and shouldn't depend on the computer's sound setup, which may have no sound
+card at all, or a TV as its only output that comes and goes.
+
+- **Windows:** a USB card's audio (`usbaudio`, e.g. the UGREEN) is read
+  straight from its driver through kernel streaming: DirectShow's KsProxy
+  over the card's `KSCATEGORY_AUDIO` filter, the same grabber path as the
+  GC573's audio pin, asked for 48 kHz 16-bit PCM. These inputs are listed
+  first as `<card> (direct)` (ids `ks:<device path>`), so a card's audio is
+  matched to them. No Windows audio engine is involved: the Windows Audio
+  service, outputs appearing and disappearing, the input's volume, effects
+  and "Listen to this device" don't reach it. While the server has it open,
+  Windows apps see the input as in use, and the other way round: while
+  something records it through Windows, the driver's one capture pin is
+  taken and opening it fails ("being recorded through Windows or by another
+  program"; the server retries). Checked on DANIHTPC with the UGREEN: 8 s of
+  48 kHz stereo in 8 s through a viewer, and picked up again within a
+  second of the pin coming free. Onboard sound (Realtek's WaveRT
+  drivers) connects through KsProxy but won't start, so direct inputs are
+  USB only; others still go through WASAPI.
+- **Why (October 2026, DANIHTPC):** turning the TV on or off makes its
+  NVIDIA HDMI outputs flap between active, unplugged and gone a dozen times
+  in 3–4 s. The UGREEN's WASAPI capture then reported a stream of
+  discontinuities, which the server treated as a lost device: each reopen
+  failed again before delivering a sample, so the stream stayed silent.
+  A discontinuity (cpal's `Xrun`) is now ignored: the stream goes on.
+- **Linux:** only `hw:CARD=<name>,DEV=<n>` inputs are offered: straight to
+  the kernel's driver, no PipeWire or PulseAudio, by card name (numbers
+  change with plug order), asked for 48 kHz. Such a device is exclusive:
+  while a desktop's PipeWire records from it, the server gets "busy" (and
+  retries); PipeWire lets go of an idle input after a few seconds. To keep
+  PipeWire off a capture card for good, a WirePlumber rule disables it, e.g.
+  `~/.config/wireplumber/wireplumber.conf.d/51-capture-card.conf`:
+  `monitor.alsa.rules = [ { matches = [ { device.name = "~alsa_card.usb-<card>*" } ] actions = { update-props = { device.disabled = true } } } ]`.
+- **macOS:** CoreAudio (`coreaudiod`) can't be bypassed for USB audio; cpal
+  reports a device going away or changing rate, and the server reopens it.
+- **Everywhere:** if a device delivers nothing for 1.5 s while the card has
+  a picture, the server reopens it (WASAPI can stall without an error).
+  While audio is down, viewers get silence whose timestamps continue where
+  the audio stopped, so their audio keeps time (recordings write audio back
+  to back) and sound comes back by itself. Audio failures, stalls and
+  reopens go to `capture.log`, once per distinct error.
 
 ## 6. Quality per viewer
 

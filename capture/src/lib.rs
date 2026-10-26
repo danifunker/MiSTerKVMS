@@ -6,7 +6,8 @@
 //! Video backends: Media Foundation (Windows), with DirectShow for cards
 //! Media Foundation can't open (AVerMedia GC573 and other PCIe cards);
 //! AVFoundation (macOS); V4L2 (Linux).
-//! Audio goes through `cpal` everywhere.
+//! Audio goes through `cpal`, except USB inputs on Windows, read straight
+//! from their driver (audio.rs, docs/CAPTURE-SERVER.md §5.7).
 
 pub mod audio;
 #[cfg(target_os = "macos")]

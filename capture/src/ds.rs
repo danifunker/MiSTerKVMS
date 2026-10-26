@@ -33,6 +33,8 @@ pub const PREFIX: &str = "dshow:";
 
 const CLSID_SAMPLE_GRABBER: GUID = GUID::from_u128(0xC1F400A0_3F08_11d3_9F0B_006008039E37);
 const CLSID_NULL_RENDERER: GUID = GUID::from_u128(0xC1F400A4_3F08_11d3_9F0B_006008039E37);
+/// Audio drivers' kernel streaming filters; DirectShow wraps each in KsProxy.
+const KSCATEGORY_AUDIO: GUID = GUID::from_u128(0x6994AD04_93EF_11D0_A3CC_00A0C9223196);
 
 #[interface("6B652FFF-11FE-4fce-92AD-0266B5D7C78F")]
 unsafe trait ISampleGrabber: IUnknown {
@@ -332,6 +334,119 @@ pub fn audio_devices() -> Vec<AudioDevice> {
         .collect()
 }
 
+/// Ids of audio inputs read straight from their driver carry this prefix;
+/// their names end in [`DIRECT`].
+pub const KS_PREFIX: &str = "ks:";
+pub const DIRECT: &str = " (direct)";
+
+fn is_usb(path: &str) -> bool {
+    path.to_lowercase().starts_with(r"\\?\usb#")
+}
+
+pub fn is_direct_audio(id_or_name: &str) -> bool {
+    id_or_name.starts_with(KS_PREFIX) || id_or_name.ends_with(DIRECT)
+}
+
+/// The wave format of a filter's audio capture pin, if it has one (render
+/// and mixer filters in the same category don't).
+unsafe fn capture_wave_format(filter: &IBaseFilter) -> Option<WAVEFORMATEX> {
+    let (graph, builder) = graph().ok()?;
+    graph.AddFilter(filter, w!("source")).ok()?;
+    let mut p = std::ptr::null_mut();
+    builder.FindInterface(Some(&PIN_CATEGORY_CAPTURE), Some(&MEDIATYPE_Audio), filter, &IAMStreamConfig::IID, &mut p).ok()?;
+    let mt = MediaType(IAMStreamConfig::from_raw(p).GetFormat().ok()?);
+    (mt.get().formattype == FORMAT_WaveFormatEx && mt.get().cbFormat as usize >= std::mem::size_of::<WAVEFORMATEX>())
+        .then(|| std::ptr::read_unaligned(mt.get().pbFormat as *const WAVEFORMATEX))
+}
+
+/// Audio inputs read through kernel streaming: straight from the driver,
+/// with no Windows audio engine in between, so the Windows Audio service,
+/// output devices coming and going (a TV turned off), the input's volume
+/// and "Listen to this device" don't touch them. While open, Windows apps
+/// see the input as in use.
+///
+/// USB inputs only (capture sticks' audio, `usbaudio`): KsProxy can only
+/// run drivers that stream the classic way, and onboard sound (Realtek's
+/// WaveRT drivers) connects but refuses to start.
+pub fn direct_audio_devices() -> Vec<AudioDevice> {
+    enumerate(&KSCATEGORY_AUDIO)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|d| is_usb(&d.path))
+        .filter(|d| unsafe { source_filter(d).is_ok_and(|f| capture_wave_format(&f).is_some()) })
+        .map(|d| AudioDevice { id: format!("{KS_PREFIX}{}", d.path), name: format!("{}{DIRECT}", d.name) })
+        .collect()
+}
+
+/// Open a direct input (`ks:` + its path, or its name). The graph lives on
+/// its own thread until the capture is dropped; the driver reporting the
+/// device gone ends the capture with `Lost`.
+pub fn open_direct_audio(id: &str) -> Result<AudioCapture, CaptureError> {
+    let id = id.to_string();
+    let (ready_tx, ready_rx) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("capture-audio-ks".into())
+        .spawn(move || {
+            init();
+            let opened = (|| unsafe {
+                let path = id.strip_prefix(KS_PREFIX).unwrap_or(&id);
+                let devices: Vec<Device> = enumerate(&KSCATEGORY_AUDIO)?.into_iter().filter(|d| is_usb(&d.path)).collect();
+                let d = devices
+                    .iter()
+                    .find(|d| d.path.eq_ignore_ascii_case(path))
+                    .or_else(|| devices.iter().find(|d| format!("{}{DIRECT}", d.name) == path))
+                    .ok_or_else(|| CaptureError::NotFound(id.clone()))?;
+                let source = source_filter(d)?;
+                let (graph, builder) = graph()?;
+                graph.AddFilter(&source, w!("source")).map_err(|e| err("add source", e))?;
+                prefer_pcm48(&builder, &source);
+                // The driver has one capture pin: E_INVALIDARG when Windows
+                // (an app recording through it) or another program holds it.
+                let (capture, tx, grabber, cb) = connect_audio(&graph, &builder, &source).map_err(|e| match e {
+                    CaptureError::Other(m) if m.contains("0x80070057") => CaptureError::InUse(format!("{} is being recorded through Windows or by another program", d.name)),
+                    e => e,
+                })?;
+                if let Ok(filter) = graph.cast::<IMediaFilter>() {
+                    let _ = filter.SetSyncSource(None);
+                }
+                let control: IMediaControl = graph.cast().map_err(|e| err("IMediaControl", e))?;
+                let events: IMediaEvent = graph.cast().map_err(|e| err("IMediaEvent", e))?;
+                control.Run().map_err(|e| err("start", e))?;
+                Ok::<_, CaptureError>((capture, tx, control, events, grabber, cb))
+            })();
+            let (stop, tx, control, events, grabber, _cb) = match opened {
+                Ok((capture, tx, control, events, grabber, cb)) => {
+                    let stop = capture.stop_flag();
+                    let _ = ready_tx.send(Ok(capture));
+                    (stop, tx, control, events, grabber, cb)
+                }
+                Err(e) => {
+                    let _ = ready_tx.send(Err(e));
+                    return;
+                }
+            };
+            while !stop.load(Ordering::Relaxed) {
+                let (mut code, mut p1, mut p2) = (0i32, 0isize, 0isize);
+                unsafe {
+                    if events.GetEvent(&mut code, &mut p1, &mut p2, 20).is_ok() {
+                        let _ = events.FreeEventParams(code, p1, p2);
+                        // EC_ERRORABORT, EC_DEVICE_LOST (unplugged), EC_STREAM_ERROR_STOPPED.
+                        if matches!(code, 0x03 | 0x1F | 0x06) {
+                            let _ = tx.try_send(Err(CaptureError::Lost(format!("audio device stopped (event {code:#x})"))));
+                            break;
+                        }
+                    }
+                }
+            }
+            unsafe {
+                let _ = control.Stop();
+                let _ = grabber.SetCallback(std::ptr::null_mut(), 1);
+            }
+        })
+        .map_err(|e| CaptureError::Other(e.to_string()))?;
+    ready_rx.recv().map_err(|e| CaptureError::Other(e.to_string()))?
+}
+
 type FrameResult = Result<VideoFrame, CaptureError>;
 
 struct Shared {
@@ -426,9 +541,67 @@ impl ISampleGrabberCB_Impl for AudioCallback_Impl {
     }
 }
 
+/// WAVE_FORMAT_IEEE_FLOAT, or EXTENSIBLE with the float subformat (its GUID
+/// sits after the 18-byte WAVEFORMATEX, valid bits and channel mask).
+unsafe fn is_float(wf: &WAVEFORMATEX, format: *const u8, len: u32) -> bool {
+    const IEEE_FLOAT: GUID = GUID::from_u128(0x00000003_0000_0010_8000_00aa00389b71);
+    match wf.wFormatTag {
+        3 => true,
+        0xFFFE if len >= 40 => std::ptr::read_unaligned(format.add(24) as *const GUID) == IEEE_FLOAT,
+        // Older drivers that don't fill it in: 32 bits is float in practice.
+        0xFFFE => wf.wBitsPerSample == 32,
+        _ => false,
+    }
+}
+
+/// Ask an audio pin for 48 kHz 16-bit PCM (what the protocol carries) if it
+/// offers that; otherwise it keeps its own format.
+unsafe fn prefer_pcm48(builder: &ICaptureGraphBuilder2, source: &IBaseFilter) {
+    let mut p = std::ptr::null_mut();
+    if builder.FindInterface(Some(&PIN_CATEGORY_CAPTURE), Some(&MEDIATYPE_Audio), source, &IAMStreamConfig::IID, &mut p).is_err() {
+        return;
+    }
+    let config = IAMStreamConfig::from_raw(p);
+    let (mut count, mut size) = (0i32, 0i32);
+    if config.GetNumberOfCapabilities(&mut count, &mut size).is_err() {
+        return;
+    }
+    let mut caps = vec![0u8; size.max(std::mem::size_of::<AUDIO_STREAM_CONFIG_CAPS>() as i32) as usize];
+    for i in 0..count {
+        let mut pmt = std::ptr::null_mut();
+        if config.GetStreamCaps(i, &mut pmt, caps.as_mut_ptr()).is_err() || pmt.is_null() {
+            continue;
+        }
+        let mt = MediaType(pmt);
+        let m = mt.get();
+        if m.formattype != FORMAT_WaveFormatEx || (m.cbFormat as usize) < std::mem::size_of::<WAVEFORMATEX>() {
+            continue;
+        }
+        let wf = &mut *(m.pbFormat as *mut WAVEFORMATEX);
+        let cc = &*(caps.as_ptr() as *const AUDIO_STREAM_CONFIG_CAPS);
+        let rate_ok = wf.nSamplesPerSec == 48000 || (cc.MinimumSampleFrequency <= 48000 && cc.MaximumSampleFrequency >= 48000);
+        if wf.wFormatTag != 1 || !rate_ok || !(cc.MinimumBitsPerSample..=cc.MaximumBitsPerSample).contains(&16) {
+            continue;
+        }
+        wf.nSamplesPerSec = 48000;
+        wf.wBitsPerSample = 16;
+        wf.nBlockAlign = wf.nChannels * 2;
+        wf.nAvgBytesPerSec = 48000 * wf.nBlockAlign as u32;
+        if config.SetFormat(mt.0).is_ok() {
+            return;
+        }
+    }
+}
+
 /// Connect the card's audio pin to a second grabber, with small buffers
 /// (DirectShow's default is about half a second, far behind the picture).
-unsafe fn connect_audio(graph: &IGraphBuilder, builder: &ICaptureGraphBuilder2, source: &IBaseFilter) -> Result<(AudioCapture, ISampleGrabber, ISampleGrabberCB), CaptureError> {
+/// Also returns a sender into the capture, for errors the graph reports.
+#[allow(clippy::type_complexity)]
+unsafe fn connect_audio(
+    graph: &IGraphBuilder,
+    builder: &ICaptureGraphBuilder2,
+    source: &IBaseFilter,
+) -> Result<(AudioCapture, SyncSender<Result<AudioChunk, CaptureError>>, ISampleGrabber, ISampleGrabberCB), CaptureError> {
     let mut p = std::ptr::null_mut();
     builder
         .FindInterface(Some(&PIN_CATEGORY_CAPTURE), Some(&MEDIATYPE_Audio), source, &IAMStreamConfig::IID, &mut p)
@@ -465,18 +638,17 @@ unsafe fn connect_audio(graph: &IGraphBuilder, builder: &ICaptureGraphBuilder2, 
 
     let mut connected = AM_MEDIA_TYPE::default();
     hr("audio connected type", grabber.GetConnectedMediaType(&mut connected))?;
-    let wf = if connected.formattype == FORMAT_WaveFormatEx && connected.cbFormat as usize >= std::mem::size_of::<WAVEFORMATEX>() {
-        std::ptr::read_unaligned(connected.pbFormat as *const WAVEFORMATEX)
+    let (wf, float) = if connected.formattype == FORMAT_WaveFormatEx && connected.cbFormat as usize >= std::mem::size_of::<WAVEFORMATEX>() {
+        let wf = std::ptr::read_unaligned(connected.pbFormat as *const WAVEFORMATEX);
+        (wf, is_float(&wf, connected.pbFormat, connected.cbFormat))
     } else {
-        wf
+        (wf, wf.wFormatTag == 3)
     };
     free_format(&mut connected);
-    // WAVE_FORMAT_IEEE_FLOAT = 3; EXTENSIBLE (0xFFFE) at 32 bits is float in practice.
-    let float = wf.wFormatTag == 3 || (wf.wFormatTag == 0xFFFE && wf.wBitsPerSample == 32);
     let (tx, rx) = mpsc::sync_channel(256);
     let stop = Arc::new(AtomicBool::new(false));
     let cb: ISampleGrabberCB = AudioCallback {
-        tx,
+        tx: tx.clone(),
         stop: stop.clone(),
         channels: wf.nChannels,
         rate: wf.nSamplesPerSec,
@@ -485,7 +657,7 @@ unsafe fn connect_audio(graph: &IGraphBuilder, builder: &ICaptureGraphBuilder2, 
     }
     .into();
     hr("audio callback", grabber.SetCallback(cb.as_raw(), 1))?;
-    Ok((AudioCapture::from_channel(rx, stop, wf.nChannels, wf.nSamplesPerSec), grabber, cb))
+    Ok((AudioCapture::from_channel(rx, stop, wf.nChannels, wf.nSamplesPerSec), tx, grabber, cb))
 }
 
 pub struct Reader {
@@ -606,7 +778,8 @@ unsafe fn open_device(d: &Device, wanted: Option<VideoFormat>, output: Output, a
     // Card audio in the same graph (the card can only be opened once).
     let (audio_capture, audio_parts) = if audio {
         match connect_audio(&graph, &builder, &source) {
-            Ok((capture, g, cb)) => (Some(capture), Some((g, cb))),
+            // The sender would keep the channel open after the graph stops.
+            Ok((capture, _, g, cb)) => (Some(capture), Some((g, cb))),
             Err(e) => {
                 dbg(&format!("audio: {e}"));
                 (None, None)
@@ -640,6 +813,14 @@ pub fn describe() -> String {
     out += "audio inputs:\n";
     for d in enumerate(&CLSID_AudioInputDeviceCategory).unwrap_or_default() {
         out += &format!("  {} [{}]\n", d.name, d.path);
+    }
+    out += "kernel streaming audio inputs (direct):\n";
+    for d in enumerate(&KSCATEGORY_AUDIO).unwrap_or_default() {
+        let wf = unsafe { source_filter(&d).ok().and_then(|f| capture_wave_format(&f)) };
+        if let Some(wf) = wf {
+            let (rate, channels, bits, tag) = (wf.nSamplesPerSec, wf.nChannels, wf.wBitsPerSample, wf.wFormatTag);
+            out += &format!("  {} [{}] {rate} Hz, {channels} ch, {bits} bit, tag {tag:#x}\n", d.name, d.path);
+        }
     }
     for d in enumerate(&CLSID_VideoInputDeviceCategory).unwrap_or_default() {
         out += &format!("video device {}\n", d.name);

@@ -650,6 +650,9 @@ fn encode_frame(stream: &Stream, frame: VideoFrame, native_bgra: &mut Bgra) -> O
 
 fn audio_loop(stream: Arc<Stream>) {
     let card_audio = is_card_audio(&stream.config.audio);
+    let mut silence = Silence::default();
+    // The last error logged, so a device that keeps failing logs once.
+    let mut logged = String::new();
     while !stream.stopped() {
         let opened = if card_audio {
             // Arrives with the video (the capture thread opens both).
@@ -661,39 +664,119 @@ fn audio_loop(stream: Arc<Stream>) {
             Ok(c) => c,
             Err(e) => {
                 if let Some(e) = e {
-                    stream.status.lock().unwrap().audio_error = e.to_string();
+                    audio_failed(&stream, &mut logged, "open", &e.to_string());
                 }
-                wait(&stream, if card_audio { Duration::from_millis(200) } else { RETRY });
+                wait_with_silence(&stream, &mut silence, if card_audio { Duration::from_millis(200) } else { RETRY });
                 continue;
             }
         };
+        log(&format!("stream '{}': audio {} Hz, {} ch", stream.config.name, cap.rate, cap.channels));
+        logged.clear();
         {
             let mut st = stream.status.lock().unwrap();
             st.audio_rate = cap.rate;
             st.audio_channels = cap.channels as u32;
             st.audio_error.clear();
         }
+        let mut last_chunk = Instant::now();
         while !stream.stopped() {
-            match cap.next_chunk(Duration::from_millis(200)) {
+            match cap.next_chunk(SILENCE_CHECK) {
                 Ok(Some(chunk)) => {
-                    let packet = Arc::new(AudioPacket {
-                        channels: chunk.channels as u8,
-                        rate: chunk.rate,
-                        samples: chunk.samples,
-                        timestamp: chunk.timestamp,
-                    });
-                    let subs = stream.subscribers.lock().unwrap().clone();
-                    for s in subs.iter().filter(|s| s.want().audio) {
-                        s.audio(packet.clone());
+                    last_chunk = Instant::now();
+                    let packet = AudioPacket { channels: chunk.channels as u8, rate: chunk.rate, samples: chunk.samples, timestamp: chunk.timestamp };
+                    silence.sent(&packet);
+                    send_audio(&stream, Arc::new(packet));
+                }
+                Ok(None) => {
+                    silence.fill(&stream);
+                    // Card audio can only reopen with its video.
+                    if !card_audio && last_chunk.elapsed() >= AUDIO_STALL && stream.status.lock().unwrap().signal {
+                        audio_failed(&stream, &mut logged, "stalled", "no audio from the device; reopening");
+                        break;
                     }
                 }
-                Ok(None) => {}
                 Err(e) => {
-                    stream.status.lock().unwrap().audio_error = e.to_string();
+                    audio_failed(&stream, &mut logged, "stopped", &e.to_string());
                     break;
                 }
             }
         }
+    }
+}
+
+/// Show an audio problem, and log it unless it's the one logged last.
+fn audio_failed(stream: &Stream, logged: &mut String, what: &str, e: &str) {
+    let message = format!("{what}: {e}");
+    if message != *logged {
+        log(&format!("stream '{}': audio {message}", stream.config.name));
+        *logged = message;
+    }
+    stream.status.lock().unwrap().audio_error = e.to_string();
+}
+
+/// No audio for this long while the card has a picture: the device stopped
+/// delivering without an error (WASAPI can, while Windows reshuffles its
+/// outputs); reopen it.
+const AUDIO_STALL: Duration = Duration::from_millis(1500);
+/// How late audio may be before viewers get silence in its place.
+const SILENCE_CHECK: Duration = Duration::from_millis(100);
+
+fn send_audio(stream: &Stream, packet: Arc<AudioPacket>) {
+    let subs = stream.subscribers.lock().unwrap().clone();
+    for s in subs.iter().filter(|s| s.want().audio) {
+        s.audio(packet.clone());
+    }
+}
+
+/// While a stream's audio is down, viewers get silence with timestamps that
+/// continue where the audio stopped, so their audio keeps time (recordings
+/// write audio back to back, and a hole would pull it ahead of the picture)
+/// and sound picks up again by itself.
+#[derive(Default)]
+struct Silence {
+    /// Channels and rate of the last audio; nothing is filled before there
+    /// was some.
+    format: Option<(u8, u32)>,
+    /// Where the audio sent so far ends, 100 ns since the Unix epoch.
+    end: i64,
+}
+
+impl Silence {
+    fn sent(&mut self, packet: &AudioPacket) {
+        let frames = packet.samples.len() as i64 / packet.channels.max(1) as i64;
+        self.format = Some((packet.channels, packet.rate));
+        self.end = packet.timestamp + frames * 10_000_000 / packet.rate.max(1) as i64;
+    }
+
+    fn fill(&mut self, stream: &Stream) {
+        if let Some(packet) = self.due(crate::now_100ns()) {
+            send_audio(stream, Arc::new(packet));
+        }
+    }
+
+    /// Silence up to `now`, once audio is more than `SILENCE_CHECK` late.
+    fn due(&mut self, now: i64) -> Option<AudioPacket> {
+        let (channels, rate) = self.format?;
+        let check = SILENCE_CHECK.as_micros() as i64 * 10;
+        let late = now - self.end;
+        if late < check {
+            return None;
+        }
+        // Seconds behind (the clock jumped): start from now.
+        let start = if late > 50_000_000 { now - check } else { self.end };
+        let frames = ((now - start) * rate as i64 / 10_000_000) as usize;
+        let packet = AudioPacket { channels, rate, samples: vec![0; frames * channels as usize], timestamp: start };
+        self.sent(&packet);
+        Some(packet)
+    }
+}
+
+/// `wait`, keeping viewers' audio going meanwhile.
+fn wait_with_silence(stream: &Stream, silence: &mut Silence, d: Duration) {
+    let until = Instant::now() + d;
+    while Instant::now() < until && !stream.stopped() {
+        thread::sleep(Duration::from_millis(50));
+        silence.fill(stream);
     }
 }
 
@@ -748,5 +831,24 @@ mod tests {
         assert_eq!(sent(60.0, None), 60);
         assert_eq!(sent(30.0, Some(30.0)), 30);
         assert_eq!(sent(25.0, Some(30.0)), 25);
+    }
+
+    #[test]
+    fn silence_continues_where_audio_stopped() {
+        use super::{AudioPacket, Silence};
+        let t0 = 17_604_000_000_000_000;
+        let mut s = Silence::default();
+        assert!(s.due(t0 + 50_000_000).is_none(), "no format yet");
+        // 10 ms of 48 kHz stereo ending at t0 + 10 ms.
+        s.sent(&AudioPacket { channels: 2, rate: 48000, samples: vec![1; 960], timestamp: t0 });
+        assert!(s.due(t0 + 500_000).is_none(), "50 ms late is still on time");
+        let p = s.due(t0 + 1_100_000).expect("110 ms late gets filled");
+        assert_eq!(p.timestamp, t0 + 100_000);
+        assert_eq!(p.samples.len(), 2 * 4800);
+        assert!(p.samples.iter().all(|&x| x == 0));
+        assert!(s.due(t0 + 1_200_000).is_none(), "filled up to now");
+        // A clock jump starts from now instead of filling the hole.
+        let p = s.due(t0 + 600_000_000).unwrap();
+        assert_eq!(p.timestamp, t0 + 600_000_000 - 1_000_000);
     }
 }
