@@ -13,7 +13,10 @@ The apps have no accounts, ads, analytics, crash reporting or tracking,
 and nothing reaches the developer or any third party. What they send (your
 keyboard and mouse input and this device's name) goes only to equipment you
 set up and run yourself: your MiSTerKVMS Capture computer, a server you host
-at home, which keeps a little of it (below) and shares it with no one. On
+at home. Your input is only there to control your MiSTer: it's passed
+straight on and never stored, and nothing tracks what you do. The capture
+computer keeps only this device's name and pairing key (below), and shares
+them with no one. On
 the Mac the app can also talk to your MiSTers and to a capture card plugged
 into the Mac.
 
@@ -27,6 +30,12 @@ keyboard and mouse input. To do that the apps connect to:
   input (keys, mouse movements and clicks, text you choose to type on the
   MiSTer) and this device's name. Other people watching the same MiSTer
   see that name while you have control ("Dani's phone has control").
+
+  Your input is used only to control the MiSTer. The capture computer
+  passes each key, click and movement straight on to the MiSTer and doesn't
+  store or log it; while you have control it remembers in memory only which
+  keys are held down, so it can release them when someone else takes over.
+  Nothing records, analyses or tracks what you do with your MiSTer.
 - **Your MiSTers** (the Mac App Store app only), through mrext Remote on
   your network, for the same input.
 - **Your local network**, to find capture servers (Bonjour / DNS-SD). This
@@ -38,7 +47,8 @@ same network. The capture computer gives this device its own key and keeps
 a list of paired devices on that computer: each one's name, when it was
 paired and last connected, and the address it last connected from. You can
 remove a device from that list on the capture computer's setup page at any
-time. Its log file also notes when a device connects, by name.
+time. Its log file notes when a device pairs and who has control, by the
+device's name, never what anyone typed or did.
 
 Connections from outside your home are encrypted end to end with that key,
 between this device and your capture computer. On your home network the
