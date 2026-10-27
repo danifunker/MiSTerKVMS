@@ -3,9 +3,11 @@ package com.danifunker.misterkvms.model
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -15,7 +17,12 @@ import java.net.InetAddress
 /** Capture server streams on the network (`_mkvm._tcp`, one entry per
  *  stream). Android gives a service's TXT record (stream, MiSTer, server)
  *  only when it's resolved, so each one found is resolved in turn: before
- *  Android 14 only one resolve may run at a time. */
+ *  Android 14 only one resolve may run at a time.
+ *
+ *  Before Android 14 the Wi-Fi stack drops multicast, so every mDNS answer,
+ *  unless an app holds a multicast lock (Android 14's mDNS takes its own):
+ *  without it a Pixel 3 on Android 12 found nothing while an iPhone on the
+ *  same Wi-Fi found every stream. Held while browsing. */
 class StreamBrowser(context: Context) {
     data class Found(
         val name: String,
@@ -33,6 +40,9 @@ class StreamBrowser(context: Context) {
         private set
 
     private val nsd = context.getSystemService(NsdManager::class.java)
+    private val multicast = context.applicationContext.getSystemService(WifiManager::class.java)
+        ?.createMulticastLock("misterkvms-discovery")
+        ?.apply { setReferenceCounted(false) }
     private val main = Handler(Looper.getMainLooper())
     private var listener: NsdManager.DiscoveryListener? = null
     private val waiting = ArrayDeque<NsdServiceInfo>()
@@ -51,10 +61,13 @@ class StreamBrowser(context: Context) {
 
             override fun onDiscoveryStarted(serviceType: String) {}
             override fun onDiscoveryStopped(serviceType: String) {}
-            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                Log.w(TAG, "discovery didn't start: error $errorCode")
+            }
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
         }
         listener = l
+        multicast?.acquire()
         nsd.discoverServices("_mkvm._tcp", NsdManager.PROTOCOL_DNS_SD, l)
     }
 
@@ -62,6 +75,7 @@ class StreamBrowser(context: Context) {
         listener?.let { runCatching { nsd.stopServiceDiscovery(it) } }
         listener = null
         waiting.clear()
+        multicast?.takeIf { it.isHeld }?.release()
     }
 
     private fun queue(info: NsdServiceInfo) {
@@ -84,6 +98,7 @@ class StreamBrowser(context: Context) {
             }
 
             override fun onResolveFailed(failed: NsdServiceInfo, errorCode: Int) {
+                Log.w(TAG, "couldn't resolve ${failed.serviceName}: error $errorCode")
                 main.post {
                     resolving = false
                     resolveNext()
@@ -94,7 +109,11 @@ class StreamBrowser(context: Context) {
 
     private fun add(info: NsdServiceInfo) {
         val txt = info.attributes.mapValues { (_, v) -> v?.toString(Charsets.UTF_8) ?: "" }
-        val host = ipv4(info) ?: return
+        val host = ipv4(info)
+        if (host == null) {
+            Log.w(TAG, "${info.serviceName}: no IPv4 address")
+            return
+        }
         val name = txt["stream"]?.takeIf { it.isNotEmpty() } ?: info.serviceName
         val path = android.net.Uri.encode(name)
         val address = if (info.port == 5970) "mkvm://$host/$path" else "mkvm://$host:${info.port}/$path"
@@ -112,3 +131,5 @@ class StreamBrowser(context: Context) {
         return addresses.firstOrNull { it is Inet4Address }?.hostAddress
     }
 }
+
+private const val TAG = "kvms"

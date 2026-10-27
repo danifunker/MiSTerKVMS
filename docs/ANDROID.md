@@ -70,7 +70,9 @@ cargo-ndk`. Works in Git Bash on Windows.
 
 - `scripts/build-android.sh`: the core for arm64-v8a and x86_64, the
   Kotlin bindings, then a debug APK. `--install` puts it on the running
-  emulator or phone; `--core-only` stops before Gradle (then open
+  emulator or phone, as its own app (`com.danifunker.misterkvms.debug`)
+  next to the one from Play, which a debug build can't replace (Play signs
+  with its own key); `--core-only` stops before Gradle (then open
   `android/` in Android Studio and Run); `--release` makes the Play bundle
   (`.aab`), signed when `ANDROID_KEYSTORE_PATH`,
   `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_ALIAS` are set.

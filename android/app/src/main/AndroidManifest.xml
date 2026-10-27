@@ -5,6 +5,9 @@
          network changes. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Finding capture servers: before Android 14 the Wi-Fi stack drops
+         mDNS answers unless an app holds a multicast lock. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- No backup: paired device keys must stay on this device. -->
     <application

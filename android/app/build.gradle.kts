@@ -51,6 +51,11 @@ android {
     }
 
     buildTypes {
+        // Its own app next to the Play one: Play signs with its own key, so
+        // a debug build can't replace it.
+        debug {
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
