@@ -1,6 +1,6 @@
 # MiSTerKVMS privacy policy
 
-Effective 25 October 2026.
+Effective 27 October 2026.
 
 This policy covers the MiSTerKVMS apps distributed through app stores: the
 iPhone app, the Mac App Store app and the Android app. They're free, open
@@ -9,10 +9,12 @@ one developer, Dani Sarfati.
 
 ## In short
 
-The apps collect nothing. They have no accounts, ads, analytics, crash
-reporting or tracking, and they send nothing to the developer or to anyone
-else. They connect only to the devices you set up yourself: your MiSTerKVMS
-Capture computers and, on the Mac, your MiSTers and a capture card plugged
+The apps have no accounts, ads, analytics, crash reporting or tracking,
+and nothing reaches the developer or any third party. What they send (your
+keyboard and mouse input and this device's name) goes only to equipment you
+set up and run yourself: your MiSTerKVMS Capture computer, a server you host
+at home, which keeps a little of it (below) and shares it with no one. On
+the Mac the app can also talk to your MiSTers and to a capture card plugged
 into the Mac.
 
 ## What the apps send, and where
@@ -36,10 +38,14 @@ same network. The capture computer gives this device its own key and keeps
 a list of paired devices on that computer: each one's name, when it was
 paired and last connected, and the address it last connected from. You can
 remove a device from that list on the capture computer's setup page at any
-time. Connections from outside your home are encrypted with that key.
+time. Its log file also notes when a device connects, by name.
 
-All of this stays between your device and computers you run. None of it
-goes to the developer.
+Connections from outside your home are encrypted end to end with that key,
+between this device and your capture computer. On your home network the
+connection isn't encrypted; it doesn't leave your network.
+
+All of this stays between your device and computers you run. No one else
+receives it: not the developer, and no third-party service is involved.
 
 ## This device's name
 
@@ -88,8 +94,10 @@ you saved on the Mac.
 
 - **iPhone:** Local Network, which iOS asks for the first time the app looks
   for or connects to capture servers. Nothing else.
-- **Android:** network access only (internet and network state). No
-  location, contacts, camera, microphone or storage permissions.
+- **Android:** network access only (internet, network state, and Wi-Fi
+  multicast, which Android needs before version 14 to find capture servers
+  on your network). No location, contacts, camera, microphone or storage
+  permissions.
 - **Mac App Store app:** network access; the camera and microphone, which
   macOS asks for only if you use a capture card plugged into the Mac (macOS
   treats the card as a camera and microphone; its picture and sound are
@@ -109,8 +117,8 @@ they lead to, such as GitHub, have their own privacy policies.
 
 ## Children
 
-The apps aren't directed at children and don't knowingly collect anything
-from anyone.
+The apps aren't directed at children, and nothing they send reaches the
+developer, from anyone.
 
 ## Changes
 
