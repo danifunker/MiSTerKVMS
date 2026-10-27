@@ -74,10 +74,10 @@ the capture server's API on this PC (`curl http://127.0.0.1:5971/api/remote`,
    `apple/Icon`, the iPhone icon); feature graphic 1024×500 (make one);
    2–8 phone screenshots from demo mode on the emulator (portrait, no
    status bar clutter); category Tools or Entertainment; contact email.
-4. **Real launcher icon**: the app still has a placeholder (a white display
-   outline, `android/app/src/main/res/drawable/ic_launcher_foreground.xml`).
-   Make an adaptive icon from the iPhone icon's artwork (foreground +
-   background + monochrome).
+4. ~~**Real launcher icon**~~ Done (27 Oct): the iPhone icon's artwork as an
+   adaptive icon, written by `python apple/Icon/make_icon.py --android`
+   (foreground PNGs per density, gradient background); the white display
+   outline stays as the themed (monochrome) icon.
 5. **Closed test or not**: the personal account looked exempt from the
    12-tester, 14-day closed test. Once setup is done, check **Test and
    release → Production**: if it asks for a closed test, start one early.

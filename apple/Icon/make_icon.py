@@ -3,11 +3,14 @@
     python3 apple/Icon/make_icon.py            # writes AppIcon.icns + AppIcon.png
     python3 apple/Icon/make_icon.py --all      # also renders the other variants
     python3 apple/Icon/make_icon.py --ios      # the iPhone app's icon (full square)
+    python3 apple/Icon/make_icon.py --android  # the Android launcher icon's layers
 
-Needs rsvg-convert (brew install librsvg) and iconutil (Xcode tools).
+Needs rsvg-convert (brew install librsvg) and iconutil (Xcode tools); for
+--android, Microsoft Edge renders it where rsvg-convert is missing (Windows).
 MiSTer-Kun artwork: see CREDITS.md in this folder.
 """
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -68,8 +71,14 @@ MAC_BG = '<rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)
 IOS_BG = '<rect width="1024" height="1024" fill="url(#bg)"/>'
 
 
+# Android: the artwork alone (the gradient is its own layer), small enough
+# for the adaptive icon's 66 dp safe zone in its 108 dp square, whatever
+# shape the launcher cuts.
+ANDROID_SCALE = 0.72
+
+
 def icon(bg, body, body_edge, bezel, screen_a, screen_b, kb_body, kb_edge, key, key_edge,
-         led, cord, vents=True, ios=False):
+         led, cord, vents=True, ios=False, android=False):
     mon = dict(x=236, y=176, w=552, h=468)
     sc = dict(x=290, y=226, w=444, h=330)
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
@@ -95,9 +104,10 @@ def icon(bg, body, body_edge, bezel, screen_a, screen_b, kb_body, kb_edge, key, 
   <clipPath id="screenclip"><rect x="{sc['x']}" y="{sc['y']}" width="{sc['w']}" height="{sc['h']}" rx="34"/></clipPath>
 </defs>
 
-{IOS_BG if ios else MAC_BG}
+{"" if android else IOS_BG if ios else MAC_BG}
 
-<g {'transform="translate(512 512) scale(1.12) translate(-512 -514)"' if ios else ""}>
+<g {'transform="translate(512 512) scale(1.12) translate(-512 -514)"' if ios
+    else f'transform="translate(512 512) scale({ANDROID_SCALE}) translate(-512 -514)"' if android else ""}>
 <g filter="url(#shadow)">
   <!-- stand -->
   <path d="M430,640 H594 L626,690 H398 Z" fill="{body_edge}"/>
@@ -146,8 +156,45 @@ VARIANTS = {
 CHOSEN = "C-beige-warm"
 
 
+EDGE = Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
+
+
 def render(svg: Path, png: Path, size: int):
-    subprocess.run(["rsvg-convert", "-w", str(size), "-h", str(size), str(svg), "-o", str(png)], check=True)
+    if shutil.which("rsvg-convert") or not EDGE.exists():
+        subprocess.run(["rsvg-convert", "-w", str(size), "-h", str(size), str(svg), "-o", str(png)], check=True)
+        return
+    # Edge, headless: a page exactly the icon's size, transparent where the
+    # icon is.
+    sized = svg.with_name(f"{svg.stem}-{size}.svg")
+    sized.write_text(svg.read_text().replace('width="1024" height="1024"', f'width="{size}" height="{size}"', 1))
+    subprocess.run([str(EDGE), "--headless", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
+                    "--default-background-color=00000000", f"--window-size={size},{size}",
+                    f"--screenshot={png.resolve()}", sized.resolve().as_uri()],
+                   check=True, capture_output=True)
+
+
+def android_icon():
+    """The adaptive launcher icon: the artwork at each density (108 dp
+    foreground) and the gradient behind it. The monochrome layer (themed
+    icons) stays the hand-drawn display outline."""
+    res = HERE.parent.parent / "android/app/src/main/res"
+    v = VARIANTS[CHOSEN]
+    with tempfile.TemporaryDirectory() as tmp:
+        svg = Path(tmp) / "android.svg"
+        svg.write_text(icon(**v, android=True))
+        for density, scale in (("mdpi", 1), ("hdpi", 1.5), ("xhdpi", 2), ("xxhdpi", 3), ("xxxhdpi", 4)):
+            out = res / f"mipmap-{density}/ic_launcher_foreground.png"
+            out.parent.mkdir(exist_ok=True)
+            render(svg, out, round(108 * scale))
+            print(f"Wrote {out}")
+    background = res / "drawable/ic_launcher_background.xml"
+    background.write_text(f"""<?xml version="1.0" encoding="utf-8"?>
+<!-- The icon's gradient, written by apple/Icon/make_icon.py (android). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient android:angle="270" android:startColor="{v['bg'][0]}" android:endColor="{v['bg'][1]}" />
+</shape>
+""")
+    print(f"Wrote {background}")
 
 
 def ios_icon():
@@ -168,6 +215,9 @@ def ios_icon():
 if __name__ == "__main__":
     if "--ios" in sys.argv:
         ios_icon()
+        sys.exit()
+    if "--android" in sys.argv:
+        android_icon()
         sys.exit()
     names = VARIANTS if "--all" in sys.argv else [CHOSEN]
     with tempfile.TemporaryDirectory() as tmp:
