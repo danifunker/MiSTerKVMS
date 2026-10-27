@@ -29,10 +29,18 @@ the capture server's API on this PC (`curl http://127.0.0.1:5971/api/remote`,
   `1 (1.0.15)` was uploaded by hand to Play's **Internal testing**; testers
   see the temporary name "com.danifunker.misterkvms (unreviewed)" until the
   listing is reviewed.
-- **Android CI**: the `build-android` job is in `release.yml`. Run #47 built
-  it (debug) on GitHub's runner; it hasn't uploaded yet because
-  `PLAY_UPLOAD` was set just after that run started. The four secrets and
-  `PLAY_UPLOAD=true` are set.
+- **Android CI**: the `build-android` job is in `release.yml`, and it
+  uploads. Run #48 (26 Oct, third attempt) signed `48 (1.0.16)`, uploaded
+  it to Internal testing and tagged `play/48`. It took two fixes, both
+  outside the repository:
+  - "Google Play Android Developer API has not been used in project
+    788191439451": the API had never been enabled in the service
+    account's Google Cloud project. Enabled it in the Cloud console.
+  - "The caller does not have permission" when committing the edit (the
+    bundle had uploaded): the service account's permission for this app in
+    Play Console (Users and permissions → the account → App permissions →
+    MiSTerKVMS: *Release apps to testing tracks*) wasn't in effect yet.
+    Fixed in Play Console, then re-ran the failed job.
 - **Privacy policy**: `docs/PRIVACY.md`, pushed. URL for both stores:
   https://github.com/danifunker/MiSTerKVMS/blob/main/docs/PRIVACY.md
 - **iPhone app**: on TestFlight from CI (latest tag `testflight/47`). The
@@ -42,15 +50,12 @@ the capture server's API on this PC (`curl http://127.0.0.1:5971/api/remote`,
 
 ### Google Play (D6)
 
-1. **First CI upload.** The next push that changes the app uploads
-   `<run number> (1.0.N)` to Internal testing and tags `play/<run>`. Watch
-   that run; the upload and signing steps have never run on CI. If signing
-   fails with "keystore password was incorrect", re-set
-   `ANDROID_KEYSTORE_PASSWORD` (`gh secret set ANDROID_KEYSTORE_PASSWORD`).
-   Small fix to go with it: `ANDROID_KEY_ALIAS` is a secret whose value is
-   `upload`, so GitHub masks the word "upload" everywhere in the logs; make
-   it a repository variable (`vars.ANDROID_KEY_ALIAS`), or the literal
-   `upload` in the workflow, and delete the secret.
+1. ~~**First CI upload.**~~ Done: `play/48` (see "Where things stand").
+   Small fix still open: `ANDROID_KEY_ALIAS` is a secret whose value is
+   `upload`, so GitHub masks the word "upload" everywhere in the logs (run
+   #48 shows `r0adkll/***-google-play`, "Successfully ***ed"); make it a
+   repository variable (`vars.ANDROID_KEY_ALIAS`), or the literal `upload`
+   in the workflow, and delete the secret.
 2. **App content** (Play Console → Policy and programs → App content), one
    form at a time:
    - Privacy policy: the URL above.
@@ -94,7 +99,7 @@ Sound on Android; stream discovery on a real network (the emulator can't
 see mDNS); three-finger gestures (Android Studio's Device Streaming has
 real phones); using a MiSTer over the internet from outside home
 (`home.dani.tech:5970`). Play's pre-launch report runs each internal
-upload on real devices: read it after the first CI upload.
+upload on real devices: read the one for `48 (1.0.16)`.
 
 ### Housekeeping
 
