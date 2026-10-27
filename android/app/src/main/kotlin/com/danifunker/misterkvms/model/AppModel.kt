@@ -188,10 +188,16 @@ class AppModel(private val app: Application) {
      *  ("Dani's Pixel has control"). */
     var deviceName: String
         get() = core.viewerName()
-        set(value) = core.setViewerName(value.trim().ifEmpty { defaultDeviceName() })
+        set(value) {
+            core.setViewerName(value.trim().ifEmpty { defaultDeviceName() })
+            if (value.isNotBlank()) deviceNamed.value = true
+        }
 
-    /** Still the generic name: ask for a real one before pairing. */
-    val deviceNameIsDefault: Boolean get() = deviceName == defaultDeviceName()
+    private val deviceNamed = prefs.bool(Pref.DEVICE_NAMED, false)
+
+    /** Still the generic name and never chosen: ask for one before pairing.
+     *  Keeping the phone's own name when asked counts as choosing it. */
+    val deviceNameIsDefault: Boolean get() = !deviceNamed.value && deviceName == defaultDeviceName()
 
     private fun defaultDeviceName(): String =
         Settings.Global.getString(app.contentResolver, Settings.Global.DEVICE_NAME)

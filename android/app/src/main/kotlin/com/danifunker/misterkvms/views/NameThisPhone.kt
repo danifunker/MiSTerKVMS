@@ -13,10 +13,11 @@ import androidx.compose.runtime.setValue
 import com.danifunker.misterkvms.model.AppModel
 
 /** Asks for this phone's name (shown on the capture PC and to other
- *  viewers), then runs `then`. */
+ *  viewers), then runs `then`. Starts with its current name (the phone's
+ *  own, from Android's settings), so Continue keeps it. */
 @Composable
 fun NameThisPhone(model: AppModel, onCancel: () -> Unit, then: () -> Unit) {
-    var name by rememberSaveable { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf(model.deviceName) }
     AlertDialog(
         onDismissRequest = onCancel,
         title = { Text("Name this phone") },

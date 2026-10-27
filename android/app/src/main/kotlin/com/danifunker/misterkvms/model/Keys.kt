@@ -40,4 +40,6 @@ object Pref {
     const val DEMO_MODE = "demo.mode"
     /** The first-run screen has been answered. */
     const val WELCOMED = "welcome.done"
+    /** This phone's name was chosen here (it may be the phone's own). */
+    const val DEVICE_NAMED = "device.named"
 }
