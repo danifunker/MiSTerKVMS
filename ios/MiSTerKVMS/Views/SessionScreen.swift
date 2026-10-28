@@ -13,6 +13,7 @@ struct SessionScreen: View {
     @State private var menuOpen = false
     @State private var switcherOpen = false
     @State private var arranging = false
+    @StateObject private var barFrame = FunctionBarFrame()
 
     var body: some View {
         ZStack {
@@ -21,12 +22,18 @@ struct SessionScreen: View {
             TouchpadVideo(model: model, onMenu: { menuOpen.toggle() }, onSwitch: { model.step($0) })
                 .ignoresSafeArea(.container)
 
-            KeyboardHost(model: model, showKeyboard: showKeyboard && !sheetOpen, showFunctionBar: showFunctionBar && !sheetOpen)
+            KeyboardHost(model: model, showKeyboard: showKeyboard && !sheetOpen, showFunctionBar: showFunctionBar && !sheetOpen,
+                         barFrame: barFrame)
                 .frame(width: 0, height: 0)
 
             statusOverlay
 
-            QuickButtons(arranging: $arranging)
+            // Above the function bar; without it, above the keyboard (its safe area).
+            GeometryReader { geo in
+                QuickButtons(arranging: $arranging)
+                    .padding(.bottom, barFrame.top.map { max(0, geo.frame(in: .global).maxY - $0) } ?? 0)
+            }
+            .ignoresSafeArea(barFrame.top == nil ? [] : .keyboard)
 
             if arranging {
                 arrangeBar

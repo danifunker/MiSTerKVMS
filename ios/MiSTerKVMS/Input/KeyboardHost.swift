@@ -43,6 +43,7 @@ struct KeyboardHost: UIViewRepresentable {
     let model: AppModel
     var showKeyboard: Bool
     var showFunctionBar: Bool
+    let barFrame: FunctionBarFrame
 
     final class Coordinator {
         var bar: UIHostingController<AnyView>?
@@ -60,7 +61,7 @@ struct KeyboardHost: UIViewRepresentable {
     func updateUIView(_ view: KeyInputView, context: Context) {
         if showFunctionBar {
             if context.coordinator.bar == nil {
-                let host = UIHostingController(rootView: AnyView(FunctionBar().environmentObject(model)))
+                let host = UIHostingController(rootView: AnyView(FunctionBar(frame: barFrame).environmentObject(model)))
                 host.view.frame = CGRect(x: 0, y: 0, width: 0, height: FunctionBar.height)
                 host.view.autoresizingMask = .flexibleWidth
                 host.view.backgroundColor = .clear
@@ -82,10 +83,20 @@ struct KeyboardHost: UIViewRepresentable {
     }
 }
 
+/// Where the function bar's top edge is on the screen, nil while it isn't
+/// shown. With the keyboard hidden iOS reports neither a keyboard frame nor
+/// a keyboard safe area for the bar alone, so the bar reports itself and the
+/// quick buttons stay above it.
+@MainActor
+final class FunctionBarFrame: ObservableObject {
+    @Published var top: CGFloat?
+}
+
 /// Keys the iOS keyboard doesn't have: Esc, Tab, modifiers (tap: next key
 /// only; tap again: locked; again: off), F1–F12, Del.
 struct FunctionBar: View {
     static let height: CGFloat = 46
+    let frame: FunctionBarFrame
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
@@ -106,6 +117,9 @@ struct FunctionBar: View {
         }
         .frame(height: Self.height)
         .background(.ultraThinMaterial)
+        // The keyboard's window covers the screen, so .global is the screen.
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { frame.top = $0 }
+        .onDisappear { frame.top = nil }
     }
 
     private func key(_ title: String, _ usage: UInt16) -> some View {
