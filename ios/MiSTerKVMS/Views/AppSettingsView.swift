@@ -13,12 +13,12 @@ struct AppSettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Dani's iPhone", text: $name)
+                    TextField("My \(Device.kind)", text: $name)
                         .submitLabel(.done)
                 } header: {
-                    Text("This iPhone's name")
+                    Text("This \(Device.kind)'s name")
                 } footer: {
-                    Text("Capture PCs list this iPhone by this name under their paired devices, and other viewers see it when you have control (“\(name.isEmpty ? "iPhone" : name) has control”). A change shows on the capture PC the next time this iPhone connects.")
+                    Text("Capture PCs list this \(Device.kind) by this name under their paired devices, and other viewers see it when you have control (“\(name.isEmpty ? Device.kind : name) has control”). A change shows on the capture PC the next time this \(Device.kind) connects.")
                 }
                 Section {
                     Toggle("Demo mode", isOn: $demo)

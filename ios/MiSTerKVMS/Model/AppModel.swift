@@ -175,7 +175,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Still the generic name: ask for a real one before pairing.
-    var deviceNameIsDefault: Bool { deviceName == UIDevice.current.name || deviceName == "iPhone" }
+    var deviceNameIsDefault: Bool { deviceName == UIDevice.current.name || deviceName == Device.kind }
 
     // MARK: - Over the internet (docs/IPHONE.md §2–3)
 
@@ -198,7 +198,7 @@ final class AppModel: ObservableObject {
                 // Without the key saved, the next launch couldn't connect from outside.
                 _ = core.stopInternet(id: id)
                 profiles = core.profiles()
-                throw ControllerError.Failed(message: "this iPhone couldn't save the key in its Keychain")
+                throw ControllerError.Failed(message: "this \(Device.kind) couldn't save the key in its Keychain")
             }
         }
         profiles = core.profiles()
@@ -377,6 +377,37 @@ final class AppModel: ObservableObject {
         } else {
             core.pressCombo(hidUsages: modifiers + [usage])
         }
+    }
+
+    /// A hardware keyboard's key went down or up (USB HID usage); held keys
+    /// stay held on the MiSTer. A press is held at least `minimumHold`: the
+    /// MiSTer misses a key let go the moment it went down.
+    func key(_ usage: UInt16, down: Bool) {
+        guard ready() else { return }
+        if down {
+            keyDownAt[usage] = Date()
+            _ = core.keyEvent(hidUsage: usage, down: true)
+            return
+        }
+        let held = keyDownAt.removeValue(forKey: usage).map { Date().timeIntervalSince($0) } ?? Self.minimumHold
+        if held >= Self.minimumHold {
+            _ = core.keyEvent(hidUsage: usage, down: false)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.minimumHold - held) { [weak self] in
+                guard let self, self.keyDownAt[usage] == nil else { return }  // pressed again meanwhile
+                _ = self.core.keyEvent(hidUsage: usage, down: false)
+            }
+        }
+    }
+
+    private static let minimumHold: TimeInterval = 0.04
+    private var keyDownAt: [UInt16: Date] = [:]
+
+    /// Lets go of every key and button held on the MiSTer.
+    func releaseKeys() {
+        keyDownAt = [:]
+        guard isConnected else { return }
+        core.releaseAll()
     }
 
     /// The Type Text box: `text` typed key by key at `keysPerSec`

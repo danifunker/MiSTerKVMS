@@ -14,16 +14,18 @@ struct SessionScreen: View {
     @State private var switcherOpen = false
     @State private var arranging = false
     @StateObject private var barFrame = FunctionBarFrame()
+    @StateObject private var hardware = HardwareInput()
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            TouchpadVideo(model: model, onMenu: { menuOpen.toggle() }, onSwitch: { model.step($0) })
+            TouchpadVideo(model: model, onMenu: { menuOpen.toggle() }, onSwitch: { model.step($0) },
+                          onPointerOver: { hardware.pointerOverPicture = $0 })
                 .ignoresSafeArea(.container)
 
             KeyboardHost(model: model, showKeyboard: showKeyboard && !sheetOpen, showFunctionBar: showFunctionBar && !sheetOpen,
-                         barFrame: barFrame)
+                         hardwareKeyboard: hardware.keyboardConnected && !sheetOpen, barFrame: barFrame)
                 .frame(width: 0, height: 0)
 
             statusOverlay
@@ -100,6 +102,8 @@ struct SessionScreen: View {
                 .animation(.easeInOut(duration: 0.2), value: model.screenshotNotice)
             }
         }
+        .onAppear { hardware.model = model }
+        .onChange(of: sheetOpen || arranging, initial: true) { _, busy in hardware.enabled = !busy }
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $switcherOpen) {

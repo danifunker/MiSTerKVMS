@@ -11,10 +11,15 @@ import UIKit
 /// - pinch: zoom the picture; two-finger drag: pan it
 /// - three-finger swipe left/right: next/previous MiSTer; three-finger tap:
 ///   the controls menu
-final class TouchpadView: UIView, UIGestureRecognizerDelegate {
+///
+/// A mouse or trackpad isn't a touchpad here: its clicks are left to
+/// `HardwareInput`, which reads it raw, and the iPad's pointer is hidden
+/// over the picture (`onPointerOver` says when it's there).
+final class TouchpadView: UIView, UIGestureRecognizerDelegate, UIPointerInteractionDelegate {
     weak var model: AppModel?
     var onMenu: (() -> Void)?
     var onSwitch: ((Int) -> Void)?
+    var onPointerOver: ((Bool) -> Void)?
 
     override class var layerClass: AnyClass { CAMetalLayer.self }
 
@@ -56,8 +61,11 @@ final class TouchpadView: UIView, UIGestureRecognizerDelegate {
         menu.require(toFail: previous)
         for g in [move, drag, click, rightClick, pinch, pan, menu, next, previous] as [UIGestureRecognizer] {
             g.delegate = self
+            g.allowedTouchTypes = [UITouch.TouchType.direct.rawValue as NSNumber]
             addGestureRecognizer(g)
         }
+        addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(hover(_:))))
+        addInteraction(UIPointerInteraction(delegate: self))
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -122,6 +130,19 @@ final class TouchpadView: UIView, UIGestureRecognizerDelegate {
     @objc private func rightClick(_ g: UITapGestureRecognizer) { model?.click(.right) }
     @objc private func showMenu(_ g: UITapGestureRecognizer) { onMenu?() }
 
+    @objc private func hover(_ g: UIHoverGestureRecognizer) {
+        switch g.state {
+        case .began: onPointerOver?(true)
+        case .ended, .cancelled, .failed: onPointerOver?(false)
+        default: break
+        }
+    }
+
+    /// Over the picture only the MiSTer's own pointer is seen.
+    func pointerInteraction(_ interaction: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {
+        .hidden()
+    }
+
     @objc private func swipe(_ g: UISwipeGestureRecognizer) {
         onSwitch?(g.direction == .left ? 1 : -1)
     }
@@ -153,18 +174,21 @@ struct TouchpadVideo: UIViewRepresentable {
     let model: AppModel
     var onMenu: () -> Void
     var onSwitch: (Int) -> Void
+    var onPointerOver: (Bool) -> Void = { _ in }
 
     func makeUIView(context: Context) -> TouchpadView {
         let view = TouchpadView(frame: .zero)
         view.model = model
         view.onMenu = onMenu
         view.onSwitch = onSwitch
+        view.onPointerOver = onPointerOver
         return view
     }
 
     func updateUIView(_ view: TouchpadView, context: Context) {
         view.onMenu = onMenu
         view.onSwitch = onSwitch
+        view.onPointerOver = onPointerOver
     }
 
     static func dismantleUIView(_ view: TouchpadView, coordinator: ()) {

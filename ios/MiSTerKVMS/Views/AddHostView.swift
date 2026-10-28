@@ -29,7 +29,7 @@ struct AddHostView: View {
                         }
                     }
                 } footer: {
-                    Text("Pairs this iPhone with the capture PC (once per capture PC), so the MiSTer works from anywhere, encrypted. Needs “Allow connections from the internet” on the capture PC's setup page.")
+                    Text("Pairs this \(Device.kind) with the capture PC (once per capture PC), so the MiSTer works from anywhere, encrypted. Needs “Allow connections from the internet” on the capture PC's setup page.")
                 }
                 Section {
                     if browser.found.isEmpty {
@@ -112,7 +112,7 @@ struct AddHostView: View {
     private func add(_ stream: StreamBrowser.Found) async {
         defer { resolving = nil }
         guard let address = await StreamBrowser.address(of: stream) else {
-            error = "\(stream.name) didn't answer. Is the phone on the same network as \(stream.server)?"
+            error = "\(stream.name) didn't answer. Is the \(Device.kind) on the same network as \(stream.server)?"
             return
         }
         whenNamed { save(name: stream.name, address: address, mister: stream.mister) }

@@ -1,3 +1,5 @@
+import UIKit
+
 /// USB HID keyboard usages (page 7) for the on-screen keys.
 enum HID {
     static let enter: UInt16 = 0x28
@@ -37,4 +39,9 @@ enum Pref {
     static let demoMode = "demo.mode"
     /// The first-run screen has been answered.
     static let welcomed = "welcome.done"
+}
+
+/// What to call this device in the app's text.
+enum Device {
+    static let kind = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
 }

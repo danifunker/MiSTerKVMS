@@ -33,7 +33,7 @@ struct HostSettingsView: View {
                                 Text("Setting up with the capture PC…").foregroundStyle(.secondary)
                             }
                         } else if profile.useInternet {
-                            Label(model.isPaired(profile) ? "Paired: encrypted with this iPhone's key for this capture PC" : "Not paired on this iPhone",
+                            Label(model.isPaired(profile) ? "Paired: encrypted with this \(Device.kind)'s key for this capture PC" : "Not paired on this \(Device.kind)",
                                   systemImage: model.isPaired(profile) ? "lock.fill" : "exclamationmark.triangle")
                                 .font(.footnote)
                                 .foregroundStyle(model.isPaired(profile) ? Color.secondary : Color.orange)
@@ -50,8 +50,8 @@ struct HostSettingsView: View {
                         Text("Over the internet")
                     } footer: {
                         Text(profile.useInternet
-                             ? "Away from home the app connects to this address (your home's public address or dynamic-DNS name, and the port forwarded to the capture PC). At home it connects directly. Pair again if the capture PC revoked this iPhone."
-                             : "Lets this iPhone connect from anywhere, encrypted. It pairs with the capture PC while you're on the same Wi-Fi (once per capture PC: its other MiSTers use the same key). First turn on “Allow connections from the internet” on the capture PC's setup page.")
+                             ? "Away from home the app connects to this address (your home's public address or dynamic-DNS name, and the port forwarded to the capture PC). At home it connects directly. Pair again if the capture PC revoked this \(Device.kind)."
+                             : "Lets this \(Device.kind) connect from anywhere, encrypted. It pairs with the capture PC while you're on the same Wi-Fi (once per capture PC: its other MiSTers use the same key). First turn on “Allow connections from the internet” on the capture PC's setup page.")
                     }
                 }
             }
@@ -134,8 +134,8 @@ private struct NameThisIPhone: ViewModifier {
     @State private var name = ""
 
     func body(content: Content) -> some View {
-        content.alert("Name this iPhone", isPresented: $isPresented) {
-            TextField("Dani's iPhone", text: $name)
+        content.alert("Name this \(Device.kind)", isPresented: $isPresented) {
+            TextField("My \(Device.kind)", text: $name)
             Button("Continue") {
                 model.deviceName = name
                 // Leave the alert before carrying on (it may present again).
@@ -144,7 +144,7 @@ private struct NameThisIPhone: ViewModifier {
             .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The capture PC lists paired phones by name, and other viewers see it when you have control.")
+            Text("The capture PC lists paired devices by name, and other viewers see it when you have control.")
         }
     }
 }

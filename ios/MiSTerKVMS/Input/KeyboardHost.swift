@@ -8,6 +8,47 @@ import UIKit
 final class KeyInputView: UIView, UIKeyInput {
     var onText: ((String) -> Void)?
     var onBackspace: (() -> Void)?
+    /// A hardware keyboard's key went down or up (USB HID usage). Keys
+    /// taken here never reach `insertText`.
+    var onKey: ((UInt16, Bool) -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        // No shortcuts bar on an iPad with a hardware keyboard.
+        inputAssistantItem.leadingBarButtonGroups = []
+        inputAssistantItem.trailingBarButtonGroups = []
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let rest = forward(presses, down: true)
+        if !rest.isEmpty { super.pressesBegan(rest, with: event) }
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let rest = forward(presses, down: false)
+        if !rest.isEmpty { super.pressesEnded(rest, with: event) }
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let rest = forward(presses, down: false)
+        if !rest.isEmpty { super.pressesCancelled(rest, with: event) }
+    }
+
+    /// Sends the keyboard's keys on; returns the presses that aren't keys.
+    private func forward(_ presses: Set<UIPress>, down: Bool) -> Set<UIPress> {
+        guard let onKey else { return presses }
+        var rest = Set<UIPress>()
+        for press in presses {
+            if let key = press.key {
+                onKey(UInt16(truncatingIfNeeded: key.keyCode.rawValue), down)
+            } else {
+                rest.insert(press)
+            }
+        }
+        return rest
+    }
 
     var systemKeyboard = true {
         didSet { if systemKeyboard != oldValue, isFirstResponder { reloadInputViews() } }
@@ -18,6 +59,15 @@ final class KeyInputView: UIView, UIKeyInput {
     private let noKeyboard = UIView(frame: .zero)
 
     override var canBecomeFirstResponder: Bool { true }
+
+    /// Keys held on a hardware keyboard would never see their release once
+    /// the focus goes (a sheet opens): let them go on the MiSTer.
+    @discardableResult override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { onResign?() }
+        return resigned
+    }
+    var onResign: (() -> Void)?
     override var inputView: UIView? { systemKeyboard ? nil : noKeyboard }
     override var inputAccessoryView: UIView? { bar }
 
@@ -43,6 +93,8 @@ struct KeyboardHost: UIViewRepresentable {
     let model: AppModel
     var showKeyboard: Bool
     var showFunctionBar: Bool
+    /// Keeps the focus for a hardware keyboard with nothing on screen.
+    var hardwareKeyboard: Bool
     let barFrame: FunctionBarFrame
 
     final class Coordinator {
@@ -55,6 +107,8 @@ struct KeyboardHost: UIViewRepresentable {
         let view = KeyInputView(frame: .zero)
         view.onText = { [weak model] text in model?.type(text) }
         view.onBackspace = { [weak model] in model?.tap(HID.backspace) }
+        view.onKey = { [weak model] usage, down in model?.key(usage, down: down) }
+        view.onResign = { [weak model] in model?.releaseKeys() }
         return view
     }
 
@@ -72,7 +126,7 @@ struct KeyboardHost: UIViewRepresentable {
             view.bar = nil
         }
         view.systemKeyboard = showKeyboard
-        let wanted = showKeyboard || showFunctionBar
+        let wanted = showKeyboard || showFunctionBar || hardwareKeyboard
         DispatchQueue.main.async {
             if wanted, !view.isFirstResponder, view.window != nil {
                 view.becomeFirstResponder()

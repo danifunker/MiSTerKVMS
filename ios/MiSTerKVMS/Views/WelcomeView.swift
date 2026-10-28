@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The first-run screen (docs/APP-STORE.md S1): what the app needs, and a
-/// way to try it without any of that. Shown once, and only to a phone with
+/// way to try it without any of that. Shown once, and only on a device with
 /// no MiSTers saved.
 struct WelcomeView: View {
     @EnvironmentObject private var model: AppModel
@@ -15,7 +15,7 @@ struct WelcomeView: View {
                 .padding(.bottom, 16)
             Text("MiSTerKVMS")
                 .font(.largeTitle.weight(.bold))
-            Text("Your MiSTer's screen and sound on your iPhone, with its keyboard and mouse under your fingers.")
+            Text("Your MiSTer's screen and sound on your \(Device.kind), with its keyboard and mouse under your fingers.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -59,6 +59,9 @@ struct WelcomeView: View {
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 16)
+        // A phone's width, centred on an iPad.
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity)
     }
 
     private func need(_ symbol: String, _ text: String) -> some View {
