@@ -8,7 +8,7 @@ Decisions (October 2026):
 
 | # | Decision |
 |---|---|
-| A1 | Same scope as the iPhone app's first version (IPHONE.md P1–P17): phone, portrait, capture server streams only (never mrext), LAN without a key, internet with a paired device key over the Noise transport, touchpad, soft keyboard + function bar, movable quick buttons, show/hide menu, one MiSTer at a time with a three-finger swipe to switch, demo mode. |
+| A1 | Same scope as the iPhone app's first version (IPHONE.md P1–P17): phone, portrait and landscape (Android 16 ignores an orientation lock on tablets and foldables, so none is set; the quick buttons step aside while the keyboard leaves too little picture), capture server streams only (never mrext), LAN without a key, internet with a paired device key over the Noise transport, touchpad, soft keyboard + function bar, movable quick buttons, show/hide menu, one MiSTer at a time with a three-finger swipe to switch, demo mode. |
 | A2 | Package name **`com.danifunker.misterkvms`** (same as the iOS bundle ID). Permanent once the first bundle is uploaded. |
 | A3 | Kotlin + Jetpack Compose; the core through **UniFFI Kotlin bindings** (JNA). Logic stays in Rust. Names follow the iPhone app's, so the two are easy to compare. |
 | A4 | **targetSdk 36**, the level Play requires of new apps and updates since 31 Aug 2026, kept in one place (`playTargetSdk` in `android/app/build.gradle.kts`); Google raises it every August. compileSdk 37. |

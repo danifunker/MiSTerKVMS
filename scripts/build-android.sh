@@ -73,7 +73,9 @@ cd android
 GRADLE=(./gradlew --console=plain "-PversionName=$VERSION" "-PversionCode=$BUILD_NUMBER")
 if [[ "$RELEASE" == "1" ]]; then
   echo "==> Play bundle"
-  "${GRADLE[@]}" bundleRelease
+  # The native symbols zip too (CI uploads it with the bundle), so Play's
+  # crash reports name the core's functions.
+  "${GRADLE[@]}" bundleRelease mergeReleaseNativeDebugMetadata
   AAB=app/build/outputs/bundle/release/app-release.aab
   if [[ -n "${ANDROID_KEYSTORE_PATH:-}" ]]; then
     echo "Built android/$AAB (signed with the upload key)"

@@ -2,16 +2,21 @@ package com.danifunker.misterkvms.views
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cable
 import androidx.compose.material.icons.outlined.DesktopWindows
@@ -45,39 +50,43 @@ import kotlinx.coroutines.delay
  *  no MiSTers saved. */
 @Composable
 fun WelcomeView(model: AppModel) {
+    // Centred on a tall screen; scrolls where it doesn't fit (landscape).
     Surface(Modifier.fillMaxSize()) {
-        Column(
-            Modifier.safeDrawingPadding().padding(horizontal = 24.dp).padding(bottom = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Spacer(Modifier.weight(1f))
-            Icon(Icons.Outlined.Monitor, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
-            Text("MiSTerKVMS", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp))
-            Text(
-                "Your MiSTer's screen and sound on your phone, with its keyboard and mouse under your fingers.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 8.dp, start = 8.dp, end = 8.dp),
-            )
-            Column(Modifier.padding(top = 32.dp, start = 8.dp, end = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Need(Icons.Outlined.Memory, "A MiSTer FPGA running mrext Remote")
-                Need(Icons.Outlined.Cable, "A capture card showing its HDMI output")
-                Need(Icons.Outlined.DesktopWindows, "MiSTerKVMS Capture on the computer the card is plugged into (Windows, Mac or Linux)")
+        BoxWithConstraints(Modifier.safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()).heightIn(min = maxHeight).widthIn(max = 560.dp)
+                    .padding(horizontal = 24.dp).padding(bottom = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.weight(1f))
+                Icon(Icons.Outlined.Monitor, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
+                Text("MiSTerKVMS", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp))
+                Text(
+                    "Your MiSTer's screen and sound on your phone, with its keyboard and mouse under your fingers.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp, start = 8.dp, end = 8.dp),
+                )
+                Column(Modifier.padding(top = 32.dp, start = 8.dp, end = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Need(Icons.Outlined.Memory, "A MiSTer FPGA running mrext Remote")
+                    Need(Icons.Outlined.Cable, "A capture card showing its HDMI output")
+                    Need(Icons.Outlined.DesktopWindows, "MiSTerKVMS Capture on the computer the card is plugged into (Windows, Mac or Linux)")
+                }
+                Spacer(Modifier.weight(1f))
+                Button({ model.welcomed(demo = false) }, Modifier.fillMaxWidth()) {
+                    Text("I have MiSTerKVMS Capture set up")
+                }
+                OutlinedButton({ model.welcomed(demo = true) }, Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                    Text("Try it without a MiSTer")
+                }
+                Text(
+                    "Shows a test pattern and lists what you type and tap. Turn it off in Settings.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
             }
-            Spacer(Modifier.weight(1f))
-            Button({ model.welcomed(demo = false) }, Modifier.fillMaxWidth()) {
-                Text("I have MiSTerKVMS Capture set up")
-            }
-            OutlinedButton({ model.welcomed(demo = true) }, Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                Text("Try it without a MiSTer")
-            }
-            Text(
-                "Shows a test pattern and lists what you type and tap. Turn it off in Settings.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 8.dp),
-            )
         }
     }
 }

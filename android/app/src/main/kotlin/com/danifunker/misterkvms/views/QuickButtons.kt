@@ -80,6 +80,9 @@ fun QuickButtons(model: AppModel, arranging: Boolean, modifier: Modifier = Modif
             }.clickable(remember { MutableInteractionSource() }, indication = null) {})
         }
         val area = DpSize(maxWidth, maxHeight)
+        // No room for them (the keyboard up in landscape leaves a strip of
+        // picture): out of the way until there is.
+        if (!arranging && maxHeight < DPAD_SIZE + 48.dp) return@BoxWithConstraints
         if (collapsed && !arranging) {
             if (showDpad || showF12 || showBackspace) {
                 Floating(model, "dpad", DpSize(EXPAND_SIZE, EXPAND_SIZE), area, arranging = false,

@@ -58,6 +58,8 @@ android {
         }
         release {
             isMinifyEnabled = true
+            // Drops resources nothing uses (Play's R8 recommendation).
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("upload")
         }

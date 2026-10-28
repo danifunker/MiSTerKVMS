@@ -554,6 +554,7 @@ jobs:
           packageName: com.danifunker.misterkvms
           releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
           mappingFile: android/app/build/outputs/mapping/release/mapping.txt
+          debugSymbols: android/app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip
           releaseName: ${{ env.BUILD_NUMBER }} (${{ env.VERSION }})
           track: internal
           status: completed
