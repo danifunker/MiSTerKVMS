@@ -59,7 +59,7 @@ NDI is being replaced by our own capture server and protocol:
    regenerates `apple/Sources/KVMSCore/Generated/` with uniffi). Keep the
    current UI; change only (R12):
    - `Views/ProfileEditor.swift`: "Video & audio from" picker: MiSTerKVMS
-     Capture stream (list from `findStreams`, editable address, Quality) /
+     Capture stream (list from `StreamFinder`, Bonjour, editable address, Quality) /
      Capture card on this Mac (`captureCards`, `audioInputs`) / OBS via NDI
      (existing fields). Hide the MiSTer fields for capture streams (the
      server knows the MiSTer). New hosts default to capture streams.

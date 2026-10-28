@@ -7,7 +7,7 @@ flag. What's different:
 | | DMG (scripts/build-mac.sh) | App Store (this project) |
 |---|---|---|
 | Build | SwiftPM (`apple/Package.swift`) | Xcode project, synchronized folders on the same sources |
-| Sandbox | no | yes (`MiSTerKVMS.entitlements`: network, camera and audio input for a local capture card, Movies for recordings, Pictures for screenshots) |
+| Sandbox | no | yes (`MiSTerKVMS.entitlements`: outgoing network only, camera and audio input for a local capture card, Movies for recordings, Pictures for screenshots) |
 | Capture server, CLI | inside the app | not included: client only |
 | System shortcuts (⌘Tab, ⌘Space) to the MiSTer | with Accessibility (event tap) | no: sandboxed apps can't have Accessibility; in-app capture only |
 | Bundle id | `io.github.misterkvms.MiSTerKVMS` | `com.danifunker.misterkvms`, the iPhone app's: one listing for both (universal purchase) |
@@ -18,7 +18,7 @@ Code that differs is in `#if APP_STORE` blocks (the event tap, the
 Accessibility prompt and banner). The generated bindings compile into the
 app here rather than a `KVMSCore` module, so `import KVMSCore` is under
 `#if canImport(KVMSCore)`, and `Model/CoreNamespace.swift` keeps
-`KVMSCore.findStreams()` and friends working. New Swift files are picked up
+`KVMSCore.captureCards()` and friends working. New Swift files are picked up
 by both builds without touching the project.
 
 ## Building

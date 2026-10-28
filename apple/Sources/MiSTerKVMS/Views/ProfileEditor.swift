@@ -28,13 +28,13 @@ struct ProfileEditor: View {
         _source = State(initialValue: isNew ? "capture" : profile.sourceKind)
     }
 
-    /// Capture server streams on the network (mDNS, a couple of seconds).
+    /// Capture server streams on the network (Bonjour, a few seconds).
     private func findStreams() {
         streamSearchID += 1
         let id = streamSearchID
         searchingStreams = true
         Task.detached {
-            let found = KVMSCore.findStreams(waitMs: 2500)
+            let found = await StreamFinder.find(wait: 2.5)
             await MainActor.run {
                 guard id == streamSearchID else { return }
                 searchingStreams = false

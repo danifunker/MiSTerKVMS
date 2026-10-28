@@ -5,10 +5,10 @@
 	<!-- The Mac App Store build is sandboxed (apple/AppStore/README.md). -->
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
-	<!-- Capture servers and mrext; mDNS discovery listens for answers. -->
+	<!-- Capture servers and mrext (outgoing only). Finding capture servers
+	     goes through the system's Bonjour (StreamFinder.swift), so no
+	     network.server: App Review rejects it for apps that don't listen. -->
 	<key>com.apple.security.network.client</key>
-	<true/>
-	<key>com.apple.security.network.server</key>
 	<true/>
 	<!-- A capture card on this Mac: its video and its audio input. -->
 	<key>com.apple.security.device.camera</key>
