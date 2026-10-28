@@ -24,7 +24,7 @@ credits in Settings → About); the rest is to do.
 
 1. **App Information**: name *MiSTerKVMS*, subtitle (30 characters, e.g.
    "Remote screen for MiSTer FPGA"), category Utilities (secondary:
-   Entertainment), content rights: no third-party content.
+   Entertainment), content rights: yes, third-party content with the rights (MiSTer-Kun in the icon and the demo, given to the community to use freely: apple/Icon/CREDITS.md).
 2. **Pricing and Availability**: Free, all countries. A free app needs no
    Paid Apps agreement, banking or tax forms.
 3. **EU trader status** (Digital Services Act): required to sell in the EU.
