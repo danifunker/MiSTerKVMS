@@ -95,7 +95,7 @@ struct KeyboardHost: UIViewRepresentable {
     var showFunctionBar: Bool
     /// Keeps the focus for a hardware keyboard with nothing on screen.
     var hardwareKeyboard: Bool
-    let barFrame: FunctionBarFrame
+    let bar: FunctionBarState
 
     final class Coordinator {
         var bar: UIHostingController<AnyView>?
@@ -115,7 +115,7 @@ struct KeyboardHost: UIViewRepresentable {
     func updateUIView(_ view: KeyInputView, context: Context) {
         if showFunctionBar {
             if context.coordinator.bar == nil {
-                let host = UIHostingController(rootView: AnyView(FunctionBar(frame: barFrame).environmentObject(model)))
+                let host = UIHostingController(rootView: AnyView(FunctionBar(state: bar).environmentObject(model)))
                 host.view.frame = CGRect(x: 0, y: 0, width: 0, height: FunctionBar.height)
                 host.view.autoresizingMask = .flexibleWidth
                 host.view.backgroundColor = .clear
@@ -137,25 +137,41 @@ struct KeyboardHost: UIViewRepresentable {
     }
 }
 
-/// Where the function bar's top edge is on the screen, nil while it isn't
-/// shown. With the keyboard hidden iOS reports neither a keyboard frame nor
-/// a keyboard safe area for the bar alone, so the bar reports itself and the
-/// quick buttons stay above it.
+/// Shared between the session screen and the function bar (which lives in
+/// the keyboard's window, so it can't read the screen's state itself).
 @MainActor
-final class FunctionBarFrame: ObservableObject {
+final class FunctionBarState: ObservableObject {
+    /// Where the bar's top edge is on the screen, nil while it isn't shown.
+    /// With the keyboard hidden iOS reports neither a keyboard frame nor a
+    /// keyboard safe area for the bar alone, so the bar reports itself and
+    /// the quick buttons stay above it.
     @Published var top: CGFloat?
+    /// The on-screen keyboard is up; nil hides the bar's keyboard key (a
+    /// hardware keyboard is connected, so iOS won't show it).
+    @Published var keyboardShown: Bool?
+    var toggleKeyboard: () -> Void = {}
 }
 
 /// Keys the iOS keyboard doesn't have: Esc, Tab, modifiers (tap: next key
-/// only; tap again: locked; again: off), F1–F12, Del.
+/// only; tap again: locked; again: off), F1–F12, Del; first, a key that
+/// shows or hides the keyboard itself.
 struct FunctionBar: View {
     static let height: CGFloat = 46
-    let frame: FunctionBarFrame
+    @ObservedObject var state: FunctionBarState
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
+                if let shown = state.keyboardShown {
+                    Button { state.toggleKeyboard() } label: {
+                        Image(systemName: shown ? "keyboard.chevron.compact.down" : "keyboard")
+                            .font(.system(size: 15, weight: .medium)).frame(minWidth: 34).padding(.vertical, 7).padding(.horizontal, 6)
+                    }
+                    .buttonStyle(KeyStyle(active: false))
+                    .accessibilityLabel(shown ? "Hide the keyboard" : "Show the keyboard")
+                    Divider().frame(height: 24)
+                }
                 key("Esc", HID.escape)
                 key("Tab", HID.tab)
                 modifier("Ctrl", HID.leftCtrl)
@@ -172,8 +188,8 @@ struct FunctionBar: View {
         .frame(height: Self.height)
         .background(.ultraThinMaterial)
         // The keyboard's window covers the screen, so .global is the screen.
-        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { frame.top = $0 }
-        .onDisappear { frame.top = nil }
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { state.top = $0 }
+        .onDisappear { state.top = nil }
     }
 
     private func key(_ title: String, _ usage: UInt16) -> some View {

@@ -6,14 +6,16 @@ import SwiftUI
 /// and the quick buttons can be moved anywhere (Arrange mode).
 struct SessionScreen: View {
     @EnvironmentObject private var model: AppModel
-    @AppStorage(Pref.keyboard) private var showKeyboard = true
+    @AppStorage(Pref.keyboard) private var keyboardInPortrait = true
+    @AppStorage(Pref.keyboardLandscape) private var keyboardInLandscape = !Device.isPhone
     @AppStorage(Pref.functionBar) private var showFunctionBar = true
     @AppStorage(Pref.banner) private var showBanner = true
     @AppStorage(Pref.stats) private var showStats = false
+    @State private var landscape = false
     @State private var menuOpen = false
     @State private var switcherOpen = false
     @State private var arranging = false
-    @StateObject private var barFrame = FunctionBarFrame()
+    @StateObject private var bar = FunctionBarState()
     @StateObject private var hardware = HardwareInput()
 
     var body: some View {
@@ -21,21 +23,23 @@ struct SessionScreen: View {
             Color.black.ignoresSafeArea()
 
             TouchpadVideo(model: model, onMenu: { menuOpen.toggle() }, onSwitch: { model.step($0) },
-                          onPointerOver: { hardware.pointerOverPicture = $0 })
+                          onPointerOver: { hardware.pointerOverPicture = $0 }, onLandscape: { landscape = $0 })
                 .ignoresSafeArea(.container)
 
             KeyboardHost(model: model, showKeyboard: showKeyboard && !sheetOpen, showFunctionBar: showFunctionBar && !sheetOpen,
-                         hardwareKeyboard: hardware.keyboardConnected && !sheetOpen, barFrame: barFrame)
+                         hardwareKeyboard: hardware.keyboardConnected && !sheetOpen, bar: bar)
                 .frame(width: 0, height: 0)
 
             statusOverlay
 
             // Above the function bar; without it, above the keyboard (its safe area).
             GeometryReader { geo in
-                QuickButtons(arranging: $arranging)
-                    .padding(.bottom, barFrame.top.map { max(0, geo.frame(in: .global).maxY - $0) } ?? 0)
+                // Each orientation keeps its own places.
+                QuickButtons(arranging: $arranging, landscape: landscape)
+                    .id(landscape)
+                    .padding(.bottom, bar.top.map { max(0, geo.frame(in: .global).maxY - $0) } ?? 0)
             }
-            .ignoresSafeArea(barFrame.top == nil ? [] : .keyboard)
+            .ignoresSafeArea(bar.top == nil ? [] : .keyboard)
 
             if arranging {
                 arrangeBar
@@ -106,6 +110,12 @@ struct SessionScreen: View {
         }
         .onAppear { hardware.model = model }
         .onChange(of: sheetOpen || arranging, initial: true) { _, busy in hardware.enabled = !busy }
+        .onChange(of: [showKeyboard, hardware.keyboardConnected, landscape], initial: true) {
+            bar.keyboardShown = hardware.keyboardConnected ? nil : showKeyboard
+            bar.toggleKeyboard = { [landscape] in
+                if landscape { keyboardInLandscape.toggle() } else { keyboardInPortrait.toggle() }
+            }
+        }
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $switcherOpen) {
@@ -114,13 +124,17 @@ struct SessionScreen: View {
                 .presentationBackground(.ultraThinMaterial)
         }
         .sheet(isPresented: $menuOpen) {
-            ControlsMenu(arrange: { arranging = true })
+            ControlsMenu(arrange: { arranging = true }, landscape: landscape)
                 .presentationDetents([.medium, .large])
                 .presentationBackground(.ultraThinMaterial)
         }
     }
 
     private var sheetOpen: Bool { menuOpen || switcherOpen }
+
+    /// The keyboard as chosen for this orientation (the function bar's
+    /// keyboard key, or the controls menu).
+    private var showKeyboard: Bool { landscape ? keyboardInLandscape : keyboardInPortrait }
 
     /// The open MiSTer's name: tap to switch to another one or disconnect.
     private var misterButton: some View {
@@ -264,9 +278,12 @@ extension UIImage {
 struct ControlsMenu: View {
     /// Enter Arrange mode (moving the quick buttons).
     var arrange: () -> Void
+    /// The keyboard switch is this orientation's.
+    var landscape: Bool
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(Pref.keyboard) private var showKeyboard = true
+    @AppStorage(Pref.keyboard) private var keyboardInPortrait = true
+    @AppStorage(Pref.keyboardLandscape) private var keyboardInLandscape = !Device.isPhone
     @AppStorage(Pref.functionBar) private var showFunctionBar = true
     @AppStorage(Pref.dpad) private var showDpad = true
     @AppStorage(Pref.f12Button) private var showF12 = true
@@ -279,7 +296,7 @@ struct ControlsMenu: View {
         NavigationStack {
             Form {
                 Section("Show") {
-                    Toggle("Keyboard", isOn: $showKeyboard)
+                    Toggle(landscape ? "Keyboard in landscape" : "Keyboard", isOn: landscape ? $keyboardInLandscape : $keyboardInPortrait)
                     Toggle("Function keys", isOn: $showFunctionBar)
                     Toggle("Control banner", isOn: $showBanner)
                     Toggle("Stats", isOn: $showStats)

@@ -3,13 +3,15 @@ import SwiftUI
 /// The quick buttons (P11): arrows around OK (Enter), F12 (the MiSTer menu)
 /// and Backspace. Each piece is shown or hidden on its own from the controls
 /// menu, and in Arrange mode each can be dragged anywhere on the screen; the
-/// places are remembered as fractions of the space above the keyboard.
+/// places are remembered as fractions of the space above the keyboard, for
+/// portrait and landscape apart.
 /// The D-pad also moves on its own: drag the handle on its top-left corner.
 /// The button on its other corner collapses them all into one small round
 /// button where the D-pad was; tapping that brings them back, dragging it
 /// moves it (and the D-pad: they share their place).
 struct QuickButtons: View {
     @Binding var arranging: Bool
+    var landscape = false
     @AppStorage(Pref.dpad) private var showDpad = true
     @AppStorage(Pref.f12Button) private var showF12 = true
     @AppStorage(Pref.backspaceButton) private var showBackspace = true
@@ -26,7 +28,7 @@ struct QuickButtons: View {
             }
             if collapsed && !arranging {
                 if showDpad || showF12 || showBackspace {
-                    Floating(id: "dpad", size: CGSize(width: 48, height: 48), initial: Self.dpadStart,
+                    Floating(id: place("dpad"), size: CGSize(width: 48, height: 48), initial: Self.dpadStart,
                              arranging: false, opacity: max(opacity, 0.8), draggable: true) { expandButton }
                 }
             } else {
@@ -37,7 +39,7 @@ struct QuickButtons: View {
 
     @ViewBuilder private var pieces: some View {
         if showDpad {
-            Floating(id: "dpad", size: CGSize(width: DPad.size, height: DPad.size),
+            Floating(id: place("dpad"), size: CGSize(width: DPad.size, height: DPad.size),
                      initial: Self.dpadStart, arranging: arranging, opacity: opacity, handle: true) {
                 DPad().overlay(alignment: .topTrailing) {
                     if !arranging { collapseButton }
@@ -45,11 +47,11 @@ struct QuickButtons: View {
             }
         }
         if showF12 {
-            Floating(id: "f12", size: SmallButton.size, initial: CGPoint(x: 0.04, y: 1),
+            Floating(id: place("f12"), size: SmallButton.size, initial: CGPoint(x: 0.04, y: 1),
                      arranging: arranging, opacity: opacity) { SmallButton(title: "F12", usage: HID.f12) }
         }
         if showBackspace {
-            Floating(id: "backspace", size: SmallButton.size, initial: CGPoint(x: 0.96, y: 1),
+            Floating(id: place("backspace"), size: SmallButton.size, initial: CGPoint(x: 0.96, y: 1),
                      arranging: arranging, opacity: opacity) {
                 SmallButton(systemImage: "delete.left", usage: HID.backspace, label: "Backspace")
             }
@@ -81,9 +83,12 @@ struct QuickButtons: View {
         .accessibilityLabel("Show quick buttons")
     }
 
-    /// Forget where the buttons were moved to.
+    /// A piece's remembered place: one for portrait, one for landscape.
+    private func place(_ id: String) -> String { landscape ? id + ".landscape" : id }
+
+    /// Forget where the buttons were moved to, in both orientations.
     static func resetPositions() {
-        for id in ["dpad", "f12", "backspace"] {
+        for id in ["dpad", "f12", "backspace"].flatMap({ [$0, $0 + ".landscape"] }) {
             UserDefaults.standard.removeObject(forKey: Floating<EmptyView>.key(id, "x"))
             UserDefaults.standard.removeObject(forKey: Floating<EmptyView>.key(id, "y"))
         }

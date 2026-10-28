@@ -20,6 +20,9 @@ final class TouchpadView: UIView, UIGestureRecognizerDelegate, UIPointerInteract
     var onMenu: (() -> Void)?
     var onSwitch: ((Int) -> Void)?
     var onPointerOver: ((Bool) -> Void)?
+    /// The interface turned between portrait and landscape.
+    var onLandscape: ((Bool) -> Void)?
+    private var lastLandscape: Bool?
 
     override class var layerClass: AnyClass { CAMetalLayer.self }
 
@@ -83,6 +86,13 @@ final class TouchpadView: UIView, UIGestureRecognizerDelegate, UIPointerInteract
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // The window's orientation, not a size: sizes shrink around the
+        // keyboard, and a tall one would make portrait look like landscape.
+        if let landscape = window?.windowScene?.effectiveGeometry.interfaceOrientation.isLandscape,
+           landscape != lastLandscape {
+            lastLandscape = landscape
+            onLandscape?(landscape)
+        }
         if window != nil { model?.resized(view: self) }
     }
 
@@ -175,6 +185,7 @@ struct TouchpadVideo: UIViewRepresentable {
     var onMenu: () -> Void
     var onSwitch: (Int) -> Void
     var onPointerOver: (Bool) -> Void = { _ in }
+    var onLandscape: (Bool) -> Void = { _ in }
 
     func makeUIView(context: Context) -> TouchpadView {
         let view = TouchpadView(frame: .zero)
@@ -182,6 +193,7 @@ struct TouchpadVideo: UIViewRepresentable {
         view.onMenu = onMenu
         view.onSwitch = onSwitch
         view.onPointerOver = onPointerOver
+        view.onLandscape = onLandscape
         return view
     }
 
@@ -189,6 +201,7 @@ struct TouchpadVideo: UIViewRepresentable {
         view.onMenu = onMenu
         view.onSwitch = onSwitch
         view.onPointerOver = onPointerOver
+        view.onLandscape = onLandscape
     }
 
     static func dismantleUIView(_ view: TouchpadView, coordinator: ()) {

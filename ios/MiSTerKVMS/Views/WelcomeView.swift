@@ -7,6 +7,16 @@ struct WelcomeView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
+        // Centred when it fits; scrolls where it doesn't (a phone in landscape).
+        GeometryReader { geo in
+            ScrollView {
+                content.frame(minHeight: geo.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+    }
+
+    private var content: some View {
         VStack(spacing: 0) {
             Spacer()
             Image(systemName: "display")

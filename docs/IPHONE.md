@@ -25,7 +25,7 @@ Decisions so far (October 2026):
 | P14 | **Every on-screen element can be hidden and brought back** (keyboard, function bar, each quick button, control banner, stats); choices are remembered. |
 | P15 | Bundle ID **com.danifunker.misterkvms**. TestFlight first, App Store after. |
 | P16 | Discovery with **Bonjour** (`NWBrowser`, `_mkvm._tcp`, which the server already advertises from Windows); typing an address always works. |
-| P17 | Not in the first version: game controller, the paste box, landscape on iPhone. iPad (every orientation) and hardware keyboard and mouse came after TestFlight (§5.6). |
+| P17 | Not in the first version: game controller, the paste box. iPad, landscape and hardware keyboard and mouse came after TestFlight (§5.6). |
 
 ```
 Home                                                    Phone
@@ -257,10 +257,15 @@ the app (not per host).
 ### 5.6 iPad and hardware input
 
 - Universal app (`TARGETED_DEVICE_FAMILY = "1,2"`): the same screens, every
-  orientation on iPad, no `UIRequiresFullScreen`. On iPhone portrait only,
-  except on a screen close to square (a foldable such as the iPhone Duo,
-  open), which turns to landscape too (`AppDelegate`, asked again when it
-  folds or unfolds).
+  orientation on iPad, no `UIRequiresFullScreen`; iPhone turns to landscape
+  too (not upside down), where the picture gets about twice the room.
+- The keyboard is remembered per orientation (`show.keyboard`,
+  `show.keyboard.landscape`; landscape starts hidden on a phone), and a
+  keyboard key at the start of the function bar shows or hides it (hidden
+  while a hardware keyboard is connected). Quick buttons keep a place per
+  orientation. Orientation comes from the window scene, not a view's size:
+  sizes shrink around the keyboard, and a tall one made portrait look like
+  landscape. The first-run screen scrolls where it doesn't fit.
   Text names the device (`Device.kind`: "iPhone" or "iPad").
 - **Hardware keyboard** (both devices): `KeyInputView` takes
   `pressesBegan`/`Ended` with `UIKey.keyCode` (USB HID usages) and sends each

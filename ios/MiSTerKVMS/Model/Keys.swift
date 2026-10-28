@@ -25,6 +25,9 @@ enum HID {
 /// What's shown on the session screen (P14), remembered for the app.
 enum Pref {
     static let keyboard = "show.keyboard"
+    /// The keyboard in landscape, remembered apart (hidden at first on a
+    /// phone, where it would leave little of the picture).
+    static let keyboardLandscape = "show.keyboard.landscape"
     static let functionBar = "show.functionBar"
     static let dpad = "show.dpad"
     static let f12Button = "show.f12"
@@ -44,4 +47,5 @@ enum Pref {
 /// What to call this device in the app's text.
 enum Device {
     static let kind = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+    static let isPhone = UIDevice.current.userInterfaceIdiom == .phone
 }
