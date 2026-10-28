@@ -72,6 +72,50 @@ credits in Settings → About); the rest is to do.
 > MiSTerKVMS Capture (free, Windows, Mac or Linux) on the computer the card
 > is plugged into.
 
+## 3a. The Mac version (same listing)
+
+App Information (name, subtitle, category, privacy, age rating) is shared
+with the iPhone app; the macOS version page has its own screenshots,
+description, keywords and build (`testflight-mac/*` from CI).
+
+**Screenshots:** 16:10, 1–10 of them; 2880×1800 is the largest size taken.
+Real MiSTers, not the demo: the host list with both MiSTers, a MiSTer's
+menu, another core's picture, the toolbar (screenshot, record), Settings.
+Size the window to 1440×900 points (the Dock may cap it a little shorter),
+capture it without its shadow (⌘⇧4, Space, ⌥-click), then
+`scripts/mac-appstore-screenshots.sh build/screenshots-mac ~/Desktop/Screenshot*.png`
+fits each to 2880×1800 and writes JPEGs (App Store Connect refuses alpha).
+Taken 27 Oct from TestFlight build 46: the Pi's and SS1's core menus, the
+stats popover and Settings, with the stream address, MiSTer address and
+viewer name replaced by placeholders (`mkvm://capture-pc/`, `192.168.1.50`,
+"My Mac").
+
+**Keywords:** MiSTer,FPGA,KVM,remote,retro,emulation,capture,keyboard,mouse,record
+
+**Description:**
+
+> MiSTerKVMS puts your MiSTer FPGA in a window on your Mac: its screen and
+> sound from a capture card, and your Mac's keyboard and mouse driving it.
+>
+> - Click the picture and the keyboard and mouse go to the MiSTer; press
+>   Right ⌘ + Right ⌥ to get them back. F12 opens the MiSTer menu.
+> - Fit, fill or integer scaling, zoom, and MiSTer's black borders cropped.
+> - Screenshots (copied or saved) and recordings with sound, to Pictures
+>   and Movies.
+> - Several MiSTers in the sidebar, each with its picture and the core it's
+>   running.
+> - Finds MiSTerKVMS Capture on your network on its own, or uses a capture
+>   card plugged into this Mac.
+>
+> Needs a MiSTer FPGA running mrext Remote, and a capture card showing it:
+> plugged into this Mac, or into a computer running MiSTerKVMS Capture
+> (free, Windows, Mac or Linux).
+
+**Review notes (Mac):** as for the iPhone, plus: *the Mac app also offers
+the demo: hold the + button in the sidebar → Add Demo Host, or "Try
+Without a MiSTer" when no hosts are saved. Sandboxed: system shortcuts such
+as ⌘Tab stay with macOS, the rest of the keyboard goes to the MiSTer.*
+
 ## 4. Order
 
 1. ~~S1 demo host, S6~~ (done); S4–S5 checks.
