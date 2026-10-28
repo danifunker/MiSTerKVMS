@@ -92,7 +92,7 @@ jobs:
 
   build-mac:
     needs: version
-    runs-on: macos-15
+    runs-on: macos-26
     env:
       VERSION: ${{ needs.version.outputs.version }}
       MISTERKVMS_VERSION: ${{ needs.version.outputs.version }}
