@@ -42,8 +42,10 @@ struct SessionScreen: View {
             } else {
                 VStack(spacing: 6) {
                     HStack(alignment: .top) {
-                        misterButton
-                        Spacer()
+                        // The name gets the room first (tight on an iPhone Duo,
+                        // whose status column takes the right edge).
+                        misterButton.layoutPriority(1)
+                        Spacer(minLength: 0)
                         if model.state.stream?.connected == true { controlButton }
                         Button { model.copyScreenshot() } label: {
                             Image(uiImage: .copyScreenshot)

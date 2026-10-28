@@ -131,6 +131,14 @@ JPEG, no alpha, in `build/` (git-ignored):
 - `build/screenshots-iphone/` (6.9", iPhone 18 Pro Max, 1320×2868): the
   Pi's menu with the keyboard, SS1 full screen with stats, the host list,
   the MiSTer switcher, the controls sheet, Settings.
+- `build/screenshots-iphone-6.3/`: the same six scaled to 1206×2622. App
+  Store Connect (Oct 2026) asks for "iPhone with Dynamic Island (medium
+  display)", 6.1"/6.3", not 6.9".
+- `build/screenshots-duo/` (iPhone Duo, unfolded, 1398×2034; iOS 27.1
+  simulator): the Pi with the keyboard (quick buttons folded), the Pi full
+  screen with stats, the host list, the switcher, the controls sheet,
+  Settings. The Duo's status column takes the right edge; the toolbar
+  buttons move into it on its own.
 - `build/screenshots-ipad/` (13", iPad Pro M5, 2752×2064 landscape): the
   Pi's menu, SS1's system settings, the switcher, the controls sheet,
   Settings.
