@@ -45,6 +45,13 @@ the capture server's API on this PC (`curl http://127.0.0.1:5971/api/remote`,
   https://github.com/danifunker/MiSTerKVMS/blob/main/docs/PRIVACY.md
 - **iPhone app**: on TestFlight from CI (latest tag `testflight/47`). The
   Mac App Store build uploads too (`MAC_APP_STORE_UPLOAD=true`).
+- **Mac App Store**: macOS 1.0.16 (build 48) submitted for review on its
+  own on 27 Oct, manual release. Screenshots are from the real MiSTers
+  (APP-STORE.md §3a; private details replaced); listing text and review
+  notes as in §3a. App Information, App Privacy (Data Not Collected, the
+  policy URL, published), content rights (yes: MiSTer-Kun), age rating and
+  pricing are shared with the iPhone app and done. If review answers, it's
+  in App Store Connect → App Review.
 
 ## What's left
 
@@ -85,13 +92,15 @@ the capture server's API on this PC (`curl http://127.0.0.1:5971/api/remote`,
 
 ### App Store (APP-STORE.md)
 
+The iPhone version goes in its own submission (the Mac one is in review).
+
 1. **S4 iPad check** and **S5 IPv6-only check** (code; simulator).
 2. **S2 demo video** (me, on a real iPhone): 1–2 minutes, unlisted YouTube.
 3. **Screenshots** for the 6.9" iPhone (1320×2868) from demo mode in the
    simulator.
-4. **App Store Connect** (APP-STORE.md §2): App Information, pricing (free),
-   EU trader status (my call), App Privacy (the policy URL; Data Not
-   Collected), age rating, version page, review notes, manual release.
+4. **App Store Connect**: the shared parts were done for the Mac (see
+   "Where things stand"); left for the iPhone: its version page, review
+   notes and manual release. EU trader status: check it was answered.
 
 ### Not yet tested on real hardware (no Android phone here yet)
 
