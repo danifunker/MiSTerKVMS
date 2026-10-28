@@ -94,10 +94,12 @@ the capture server's API on this PC (`curl http://127.0.0.1:5971/api/remote`,
 
 The iPhone version goes in its own submission (the Mac one is in review).
 
-1. **S4 iPad check** and **S5 IPv6-only check** (code; simulator).
+1. ~~S4~~: the app is universal now (iPad, hardware keyboard and mouse;
+   IPHONE.md §5.6); needs a push for a new TestFlight build. **S5 IPv6-only
+   check** (code; not a blocker).
 2. **S2 demo video** (me, on a real iPhone): 1–2 minutes, unlisted YouTube.
-3. **Screenshots** for the 6.9" iPhone (1320×2868) from demo mode in the
-   simulator.
+3. ~~Screenshots~~: iPhone 6.9", iPad 13" and an App Preview, in `build/`
+   (APP-STORE.md §3b).
 4. **App Store Connect**: the shared parts were done for the Mac (see
    "Where things stand"); left for the iPhone: its version page, review
    notes and manual release. EU trader status: check it was answered.

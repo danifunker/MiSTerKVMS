@@ -6,8 +6,8 @@ client-only build of it, see [apple/AppStore/README.md](../apple/AppStore/README
 Everything not needed for that is in [BACKLOG.md](BACKLOG.md).
 
 Status: TestFlight builds go out from CI (IPHONE.md §6.1); export compliance
-is declared (exempt). S1 and S6 are done (demo mode, first-run screen,
-credits in Settings → About); the rest is to do.
+is declared (exempt). S1, S4 and S6 are done (demo mode, iPad, first-run
+screen, credits in Settings → About); screenshots are taken (§3b).
 
 ## 1. What review needs that we don't have yet
 
@@ -16,7 +16,7 @@ credits in Settings → About); the rest is to do.
 | S1 | **A way for review to try the app** (done) | code | Reviewers have no MiSTer or capture PC, and pairing only works on the home network, so a public demo server can't work. **Demo mode** (first-run screen: "Try it without a MiSTer"; Settings → Demo mode) adds a Demo host: the built-in test pattern (`capture/src/pattern.rs`, rainbow bars and a beep) with MiSTer-Kun stepping across it in place of the white box (`test:demo`), through the same video, sound, touchpad and keyboard paths. The core writes the input a MiSTer would have received as lines over the picture ("Shift+Tab", "double click", "mouse moved +120, −40"), each gone after 5 s (`core/src/demo.rs`). Also gives the App Store screenshots something to show. |
 | S2 | **Demo video** | you | Apple usually asks for one for apps that need hardware: 1–2 minutes on a real iPhone: add a MiSTer, the picture and sound, the touchpad, typing, the remote, switching MiSTers, internet pairing. An unlisted YouTube link in the review notes. |
 | S3 | **Privacy policy** | code + you | Required for every app. Written: `docs/PRIVACY.md` (iPhone, Mac App Store and Android apps; they collect nothing, and what they send goes only to the user's own capture PC and MiSTers). Policy URL: https://github.com/danifunker/MiSTerKVMS/blob/main/docs/PRIVACY.md |
-| S4 | **iPad check** | code | An iPhone-only app (`TARGETED_DEVICE_FAMILY = 1`) still runs on iPad in compatibility mode, and review often tests there. Check the session screen, keyboard and remote in the iPad simulator. |
+| S4 | **iPad** (done) | code | The app is universal now (IPHONE.md §5.6): a native iPad app in every orientation, with hardware keyboard and mouse input. Checked in the iPad Pro 13" simulator: first-run screen, demo, session in portrait and landscape, sheets, the real MiSTers. A universal app needs **13" iPad screenshots** too. |
 | S5 | **IPv6-only check** | code | Review's network is IPv6-only (NAT64). The demo needs no network; connecting by name must not assume IPv4. Check typed addresses and names resolve to IPv6, and the error when nothing answers is clear. |
 | S6 | **First-run pass** (done) | code | A first-run screen (only on a phone with no MiSTers saved) says what's needed and offers the demo; the empty host list says the same and offers it too. Settings → About has the version and the credits (MiSTer-Kun, MiSTer, mrext), as in the desktop apps. |
 
@@ -35,7 +35,8 @@ credits in Settings → About); the rest is to do.
 5. **Age rating** questionnaire: no objectionable content, unrestricted web
    access no → 4+.
 6. **Version page** (1.0.N, matching the TestFlight build): screenshots for
-   the 6.9" iPhone (1320×2868; Apple scales them for smaller ones; 3–10),
+   the 6.9" iPhone (1320×2868; Apple scales them for smaller ones; 3–10)
+   and the 13" iPad (2752×2064 landscape), an optional App Preview video,
    description, keywords (100 characters), support URL (the GitHub repo's
    issues), copyright, the build.
 7. **App Review Information**: your contact; sign-in not required; notes:
@@ -55,14 +56,16 @@ credits in Settings → About); the rest is to do.
 
 **Description:**
 
-> MiSTerKVMS puts your MiSTer FPGA on your iPhone: its screen and sound
-> from a capture card, and its keyboard and mouse under your fingers.
+> MiSTerKVMS puts your MiSTer FPGA on your iPhone or iPad: its screen and
+> sound from a capture card, and its keyboard and mouse under your fingers.
 >
 > - The picture fills the screen; the screen is a touchpad for the mouse.
 > - The iPhone keyboard types on the MiSTer, with a bar for function keys,
 >   Esc, Tab and arrows.
 > - A small remote you can move and fold away: arrows, OK, F12 for the
 >   MiSTer menu, backspace.
+> - A hardware keyboard, mouse or trackpad works too: on an iPad with a
+>   Magic Keyboard the MiSTer gets real key presses.
 > - Several MiSTers: swipe with three fingers to switch.
 > - At home it finds your capture PC on its own. Away from home, pair once
 >   on your Wi-Fi and connect over the internet, encrypted with a key for
@@ -116,9 +119,30 @@ the demo: hold the + button in the sidebar → Add Demo Host, or "Try
 Without a MiSTer" when no hosts are saved. Sandboxed: system shortcuts such
 as ⌘Tab stay with macOS, the rest of the keyboard goes to the MiSTer.*
 
+## 3b. iPhone and iPad screenshots and preview
+
+Taken 27 Oct in the simulator from the real MiSTers (SS1 and the Pi through
+the capture server), with the status bar at 9:41. Nothing private shows:
+the host list and switcher show stream names only; the device name was set
+to "My iPhone" (the iPad shows the "My iPad" placeholder); the build's
+version in Settings was painted over as 1.0.22 (Pillow, SF, colours sampled).
+JPEG, no alpha, in `build/` (git-ignored):
+
+- `build/screenshots-iphone/` (6.9", iPhone 18 Pro Max, 1320×2868): the
+  Pi's menu with the keyboard, SS1 full screen with stats, the host list,
+  the MiSTer switcher, the controls sheet, Settings.
+- `build/screenshots-ipad/` (13", iPad Pro M5, 2752×2064 landscape): the
+  Pi's menu, SS1's system settings, the switcher, the controls sheet,
+  Settings.
+- `build/video-iphone/app-preview-886x1920.mp4`: a 29 s App Preview
+  (886×1920, H.264, silent stereo AAC) cut from a 68 s simulator walkthrough
+  (`walkthrough-1080.mp4`): host list, the Pi, D-pad and typing in its menu,
+  switching to SS1, hiding the keyboard. No sound (the simulator records
+  none), so it's not the S2 review video.
+
 ## 4. Order
 
-1. ~~S1 demo host, S6~~ (done); S4–S5 checks.
-2. S3 privacy policy page; S2 video (you, with the TestFlight build).
-3. Screenshots from the demo host in the simulator.
+1. ~~S1 demo host, S6, S4 iPad~~ (done); S5 IPv6 check.
+2. ~~S3 privacy policy page~~; S2 video (you, with the TestFlight build).
+3. ~~Screenshots~~ (§3b; real MiSTers, not the demo).
 4. App Store Connect (§2), submit, answer review.

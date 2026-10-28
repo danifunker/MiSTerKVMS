@@ -33,15 +33,16 @@ for anything I do in App Store Connect: give me the step, wait for me.
 
 ## What's left, in order
 
-### 1. S4: iPad check (code, simulator)
+### 1. S4: iPad (done 27 Oct)
 
-The app is iPhone-only (`TARGETED_DEVICE_FAMILY = 1`), so on iPad it runs
-in compatibility mode, and review often tests there. Build for the
-simulator (`scripts/build-ios.sh`), run it on an iPad simulator, and go
-through: first-run screen, demo host, session screen (picture, touchpad,
-keyboard and function bar, quick buttons and Arrange mode), Settings,
-switching hosts. Fix anything cut off, misplaced or unusable; landscape on
-iPad is the likely trouble spot.
+The app is universal now, not iPhone-only: a native iPad app in every
+orientation, with hardware keyboard and mouse/trackpad input on both
+devices (IPHONE.md §5.6). Checked in the iPad Pro 13" simulator (first
+run, demo, sessions in portrait and landscape, sheets, the real MiSTers).
+The hardware keyboard was tested against the real Pi; the **mouse and
+trackpad aren't tested** (the simulator tools can't send a mouse): try one
+on a real iPad before submitting. These changes need a new TestFlight
+build: **push to `main` when you approve** (CI uploads it).
 
 ### 2. S5: IPv6-only check (code; not a blocker for review)
 
@@ -75,37 +76,15 @@ resolve with Rust's `to_socket_addrs()` and take only the first address.
   it can't test this). Check typed addresses and names connect, and the
   error when nothing answers is clear.
 
-### 3. Screenshots (6.9" iPhone, 1320×2868)
+### 3. Screenshots (done 27 Oct)
 
-Use the **real MiSTers, not demo mode** (my preference). That needs this
-computer on the home network and `local.settings.json` (git-ignored; copy
-`local.settings.example.json`): MiSTer-SS1 at 192.168.99.92, MiSTer-Pi at
-192.168.99.143, capture server on DANIHTPC (192.168.99.82, streams
-`mkvm://192.168.99.82/MiSTer-SS1` and `/MiSTer-Pi`). The `misterkvms` MCP
-tools (docs/MCP.md) press keys on them: `key menu` opens the MiSTer's core
-menu (it closes itself after a while, so open it right before each shot).
-
-- Simulator: an **iPhone 17 Pro Max** (6.9", 1320×2868 screenshots). The
-  simulator shares this Mac's network, so it finds the capture server.
-- Clean status bar first: `xcrun simctl status_bar booted override --time
-  9:41 --batteryState charged --batteryLevel 100 --wifiBars 3
-  --cellularBars 4`.
-- Capture with `xcrun simctl io booted screenshot shot.png` (exact size, no
-  permissions needed). Drive the app with the iOS Simulator tools.
-- 3–10 shots, portrait: the host list with both MiSTers, a MiSTer's menu
-  full screen, the keyboard with the function bar, the quick buttons, the
-  stats, Settings.
-- **Cover private details** with placeholders, as on the Mac: stream
-  address → `mkvm://capture-pc/`, MiSTer IP → `192.168.1.50`, the viewer /
-  device name → "My iPhone", and any internet address or pairing details.
-  On the Mac this was done with Pillow in a scratch virtualenv
-  (`python3 -m venv`, `pip install pillow`): paint each value over with a
-  blend of the pixels left and right of it, then draw the placeholder in
-  SF (`/System/Library/Fonts/SFNS.ttf`, weight Medium, matched to the size
-  on screen). Look at every shot zoomed in before calling it done.
-- App Store Connect refuses images with an alpha channel: save as JPEG (or
-  PNG without alpha). Put them in `build/screenshots-iphone/` (git-ignored)
-  and tell me where they are.
+From the real MiSTers in the simulator, private details hidden
+(APP-STORE.md §3b): `build/screenshots-iphone/` (6 × 1320×2868),
+`build/screenshots-ipad/` (5 × 2752×2064), and an App Preview,
+`build/video-iphone/app-preview-886x1920.mp4` (29 s, silent). Retake them
+the same way if the UI changes: `xcrun simctl status_bar booted override
+--time 9:41 …`, `xcrun simctl io <device> screenshot`, the
+`misterkvms-cli key menu --host ss1|pi` right before each shot.
 
 ### 4. S2: demo video (me)
 
@@ -118,13 +97,14 @@ the link goes in the review notes. Remind me; it can't be done here.
 1. **Apps → MiSTerKVMS → iOS App** version page. Its version must match
    the build's (TestFlight → iOS builds); change it if not.
 2. **Screenshots**: the 6.9" iPhone slot (Apple scales them for smaller
-   ones).
+   ones) and the 13" iPad slot; the App Preview in the 6.9" slot if
+   wanted.
 3. **Promotional text, description, keywords**: APP-STORE.md §3. Support
    URL `https://github.com/danifunker/MiSTerKVMS/issues`, marketing URL
    `https://github.com/danifunker/MiSTerKVMS`, copyright `2026 Dani
    Sarfati`.
-4. **Build**: the latest TestFlight build, with the S4 fixes if any were
-   needed (CI uploads it after the push I approve).
+4. **Build**: the TestFlight build with the iPad and hardware input
+   (CI uploads it after the push I approve).
 5. **App Review Information**: sign-in not required, my contact, the notes
    from APP-STORE.md §2 step 7 plus the video link.
 6. **Version Release**: manual.

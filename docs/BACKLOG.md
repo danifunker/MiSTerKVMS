@@ -5,13 +5,10 @@ The mrext wish list is in [PLANNING.md](PLANNING.md) §7 (we don't change mrext)
 
 ## iPhone app
 
-- **Hardware keyboard**: real key presses (hold, repeat, any layout) from
-  `pressesBegan`/`UIKey.keyCode` HID usages to the core's key events.
-- **Hardware mouse and trackpad**: `GCMouse` relative movement and buttons;
-  needs testing on a device with a mouse.
+- **Hardware mouse and trackpad** (written, IPHONE.md §5.6): test on an
+  iPad with a mouse or trackpad; pointer lock if the pointer leaving the
+  picture gets in the way; the scroll wheel (the core has no wheel yet).
 - **Game controller**: needs a virtual gamepad in mrext first.
-- **iPad layout, landscape** (the iPhone app runs on iPad in compatibility
-  mode until then).
 - **Pairing by QR code** from outside the home network (shown on the setup
   page).
 

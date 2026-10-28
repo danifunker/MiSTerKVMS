@@ -25,7 +25,7 @@ Decisions so far (October 2026):
 | P14 | **Every on-screen element can be hidden and brought back** (keyboard, function bar, each quick button, control banner, stats); choices are remembered. |
 | P15 | Bundle ID **com.danifunker.misterkvms**. TestFlight first, App Store after. |
 | P16 | Discovery with **Bonjour** (`NWBrowser`, `_mkvm._tcp`, which the server already advertises from Windows); typing an address always works. |
-| P17 | Not in the first version: hardware keyboard/mouse/game controller, the paste box, iPad, landscape. |
+| P17 | Not in the first version: game controller, the paste box, landscape on iPhone. iPad (every orientation) and hardware keyboard and mouse came after TestFlight (§5.6). |
 
 ```
 Home                                                    Phone
@@ -254,6 +254,26 @@ the app (not per host).
 - Network changes (Wi-Fi ↔ cellular) reconnect, picking LAN or internet
   again.
 
+### 5.6 iPad and hardware input
+
+- Universal app (`TARGETED_DEVICE_FAMILY = "1,2"`): the same screens, every
+  orientation on iPad (portrait only on iPhone), no `UIRequiresFullScreen`.
+  Text names the device (`Device.kind`: "iPhone" or "iPad").
+- **Hardware keyboard** (both devices): `KeyInputView` takes
+  `pressesBegan`/`Ended` with `UIKey.keyCode` (USB HID usages) and sends each
+  key down and up through the core's `key_event`, so holds, modifiers and
+  combinations reach the MiSTer as typed; such presses never reach
+  `insertText`. While a keyboard is connected (`GCKeyboard`) the view keeps
+  the focus even with the on-screen keyboard and function bar hidden. Each
+  press is held at least 40 ms (the MiSTer misses a zero-length press).
+  System shortcuts (⌘Tab, ⌘Space, Globe) stay with iPadOS.
+- **Mouse and trackpad** (`HardwareInput`): `GCMouse` deltas and buttons go
+  to the MiSTer while the pointer is over the picture (a hover recognizer on
+  the touchpad view), where the system pointer is hidden; over the app's
+  buttons it shows and works normally. Touchpad gestures take direct touches
+  only, so a pointer click isn't also a tap. Not tested with a real mouse yet
+  (the simulator tools can't send one); no pointer lock or scroll wheel.
+
 ## 6. Building
 
 - Rust targets `aarch64-apple-ios` and `aarch64-apple-ios-sim` (rustup).
@@ -340,7 +360,7 @@ uptime).
 | I5 | Away from home | phone on cellular through a forwarded port: picture, sound, input; switching Wi-Fi ↔ cellular reconnects |
 | I6 | TestFlight (done) | icon, privacy strings, export compliance answered, build uploaded |
 | I7 | App Store | demo host for review, privacy policy, listing and screenshots, approved and released ([APP-STORE.md](APP-STORE.md)) |
-| Later | iPad, landscape, hardware keyboard/mouse/controller, paste box, Opus audio, QUIC, pairing by QR code from outside the LAN ([BACKLOG.md](BACKLOG.md)) | |
+| Later | Game controller, paste box, Opus audio, QUIC, pairing by QR code from outside the LAN ([BACKLOG.md](BACKLOG.md)) | |
 
 ## 8. Risks and open questions
 
