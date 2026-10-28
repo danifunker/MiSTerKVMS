@@ -11,9 +11,10 @@ struct ProfileEditor: View {
     /// "capture" or "local".
     @State private var source: String
     // Capture server streams
-    @State private var streams: [FoundStream] = []
-    @State private var searchingStreams = false
-    @State private var streamSearchID = 0
+    @StateObject private var finder = StreamFinder()
+    /// The stream being resolved to an address after it was picked.
+    @State private var resolvingStream: StreamFinder.Found.ID?
+    @State private var streamError: String?
     // Capture cards on this Mac
     @State private var cards: [CaptureCard] = []
     @State private var audioInputs: [AudioInput] = []
@@ -28,20 +29,29 @@ struct ProfileEditor: View {
         _source = State(initialValue: isNew ? "capture" : profile.sourceKind)
     }
 
-    /// Capture server streams on the network (Bonjour, a few seconds).
-    private func findStreams() {
-        streamSearchID += 1
-        let id = streamSearchID
-        searchingStreams = true
-        Task.detached {
-            let found = await StreamFinder.find(wait: 2.5)
-            await MainActor.run {
-                guard id == streamSearchID else { return }
-                searchingStreams = false
-                streams = found
-                if profile.stream.isEmpty, found.count == 1 {
-                    profile.stream = found[0].address
-                }
+    /// The stream, once a search finds just one and none was set.
+    private func pickOnlyStream() {
+        if profile.stream.isEmpty, resolvingStream == nil, finder.found.count == 1 {
+            chooseStream(finder.found[0])
+        }
+    }
+
+    /// Resolves the picked stream to the address this Mac reaches it on.
+    private func chooseStream(_ found: StreamFinder.Found) {
+        resolvingStream = found.id
+        streamError = nil
+        Task {
+            let address = await StreamFinder.address(of: found)
+            guard resolvingStream == found.id else { return }
+            resolvingStream = nil
+            guard let address else {
+                streamError = "\(found.name) didn't answer. Is this Mac on the same network as \(found.server.isEmpty ? "the capture PC" : found.server)?"
+                return
+            }
+            profile.stream = address
+            // The server's name, unless one was typed.
+            if profile.nameFromServer || profile.name.isEmpty {
+                profile.name = found.name
             }
         }
     }
@@ -71,7 +81,7 @@ struct ProfileEditor: View {
     private func showSource() {
         switch source {
         case "local": if cards.isEmpty { findCards() }
-        default: if streams.isEmpty { findStreams() }
+        default: if !finder.searching && finder.found.isEmpty { finder.start() }
         }
     }
 
@@ -131,6 +141,8 @@ struct ProfileEditor: View {
         .frame(width: 500)
         .onAppear(perform: showSource)
         .onChange(of: source) { _, _ in showSource() }
+        .onChange(of: finder.searching) { _, searching in if !searching { pickOnlyStream() } }
+        .onDisappear { finder.stop() }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
@@ -158,16 +170,12 @@ extension ProfileEditor {
                     TextField("Stream", text: $profile.stream, prompt: Text("Choose, or type mkvm://pc/stream"))
                         .labelsHidden()
                     Menu {
-                        if streams.isEmpty {
-                            Text(searchingStreams ? "Looking for streams…" : "No streams found")
+                        if finder.found.isEmpty {
+                            Text(finder.searching ? "Looking for streams…" : "No streams found")
                         }
-                        ForEach(streams, id: \.address) { found in
+                        ForEach(finder.found) { found in
                             Button(found.mister.isEmpty ? found.name : "\(found.name) (\(found.mister))") {
-                                profile.stream = found.address
-                                // The server's name, unless one was typed.
-                                if profile.nameFromServer || profile.name.isEmpty {
-                                    profile.name = found.name
-                                }
+                                chooseStream(found)
                             }
                         }
                     } label: {
@@ -177,20 +185,24 @@ extension ProfileEditor {
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .help("Streams found on the network")
-                    Button(action: findStreams) {
-                        if searchingStreams {
+                    Button(action: { streamError = nil; finder.start() }) {
+                        if finder.searching || resolvingStream != nil {
                             ProgressView().controlSize(.small)
                         } else {
                             Text("Find")
                         }
                     }
-                    .disabled(searchingStreams)
+                    .disabled(finder.searching || resolvingStream != nil)
                 }
             }
-            if !searchingStreams {
-                Text(streams.isEmpty
+            if let streamError {
+                Text(streamError).font(.caption).foregroundStyle(.red)
+            } else if let resolvingStream, let found = finder.found.first(where: { $0.id == resolvingStream }) {
+                Text("Connecting to \(found.name)…").font(.caption).foregroundStyle(.secondary)
+            } else if !finder.searching {
+                Text(finder.found.isEmpty
                      ? "No streams found. Is MiSTerKVMS Capture running on the capture PC, with a stream set up? You can also type its address."
-                     : streams.count == 1 ? "Found 1 stream." : "Found \(streams.count) streams.")
+                     : finder.found.count == 1 ? "Found 1 stream." : "Found \(finder.found.count) streams.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Picker("Quality", selection: $profile.quality) {

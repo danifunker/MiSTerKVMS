@@ -1,75 +1,100 @@
 import Foundation
 import Network
-#if canImport(KVMSCore)
-import KVMSCore
-#endif
 
 /// Capture server streams on the network (`_mkvm._tcp`, one entry per
 /// stream), found through the system's Bonjour (Network.framework) rather
 /// than the core's own mDNS socket: a sandboxed app then needs only the
 /// network client entitlement, not the server one (apple/AppStore/README.md).
-enum StreamFinder {
-    fileprivate struct Found {
+/// As on the iPhone (ios/MiSTerKVMS/Model/StreamBrowser.swift), it keeps
+/// browsing while it's shown and only the stream picked is resolved: with
+/// the browser running, the system has the server's records at hand.
+@MainActor
+final class StreamFinder: ObservableObject {
+    struct Found: Identifiable, Hashable, Sendable {
         let name: String
         let mister: String
         let server: String
-        let endpoint: NWEndpoint
+        /// Every announcement of the stream: a server answers on each of its
+        /// network adapters, and stale copies ("MiSTer-SS1 (2)") that never
+        /// resolve can linger. The one named as the stream comes first.
+        let endpoints: [NWEndpoint]
+        var id: String { "\(server)/\(name)" }
     }
 
-    /// Browses for `wait` seconds, then resolves each stream to the IPv4
-    /// address this Mac reaches it on. Streams that can't be reached are left out.
-    static func find(wait: TimeInterval) async -> [FoundStream] {
-        let found = await browse(wait: wait)
-        let streams = await withTaskGroup(of: FoundStream?.self) { group in
-            for stream in found {
-                group.addTask {
-                    guard let address = await address(of: stream) else { return nil }
-                    return FoundStream(name: stream.name, address: address, mister: stream.mister, server: stream.server)
-                }
-            }
-            var all: [FoundStream] = []
-            for await stream in group {
-                if let stream { all.append(stream) }
-            }
-            return all
-        }
-        return streams.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
+    @Published private(set) var found: [Found] = []
+    /// The first couple of seconds of a search, before "none found" means it.
+    @Published private(set) var searching = false
+    private var browser: NWBrowser?
+    private var searchID = 0
 
-    private static func browse(wait: TimeInterval) async -> [Found] {
+    /// Starts browsing, or starts over.
+    func start() {
+        stop()
+        found = []
+        searching = true
+        searchID += 1
+        let id = searchID
         let browser = NWBrowser(for: .bonjourWithTXTRecord(type: "_mkvm._tcp", domain: nil), using: .tcp)
-        let queue = DispatchQueue(label: "StreamFinder")
-        let latest = Latest()
-        return await withCheckedContinuation { continuation in
-            browser.browseResultsChangedHandler = { results, _ in
-                latest.list = results.compactMap { result in
-                    guard case let .service(name, _, _, _) = result.endpoint else { return nil }
-                    var txt: [String: String] = [:]
-                    if case let .bonjour(record) = result.metadata { txt = record.dictionary }
-                    return Found(name: txt["stream"] ?? name, mister: txt["mister"] ?? "",
-                                 server: txt["server"] ?? "", endpoint: result.endpoint)
+        browser.browseResultsChangedHandler = { [weak self] results, _ in
+            // One row per stream, with all its announcements.
+            var byID: [String: Found] = [:]
+            for result in results {
+                guard case let .service(instance, _, _, _) = result.endpoint else { continue }
+                var txt: [String: String] = [:]
+                if case let .bonjour(record) = result.metadata { txt = record.dictionary }
+                let name = txt["stream"] ?? instance
+                let stream = Found(name: name, mister: txt["mister"] ?? "", server: txt["server"] ?? "", endpoints: [result.endpoint])
+                guard let known = byID[stream.id] else {
+                    byID[stream.id] = stream
+                    continue
                 }
+                let endpoints = instance == name ? [result.endpoint] + known.endpoints : known.endpoints + [result.endpoint]
+                byID[stream.id] = Found(name: known.name, mister: known.mister, server: known.server, endpoints: endpoints)
             }
-            browser.start(queue: queue)
-            queue.asyncAfter(deadline: .now() + wait) {
-                browser.cancel()
-                // A server answers on each of its network adapters: one entry per stream.
-                var seen = Set<String>()
-                continuation.resume(returning: latest.list.filter { seen.insert("\($0.server)/\($0.name)").inserted })
-            }
+            let unique = byID.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            Task { @MainActor in self?.found = unique }
         }
+        browser.start(queue: .main)
+        self.browser = browser
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            guard let self, self.searchID == id else { return }
+            self.searching = false
+        }
+    }
+
+    func stop() {
+        browser?.cancel()
+        browser = nil
+        searching = false
     }
 
     /// The stream's `mkvm://` address, with the IPv4 address this Mac
-    /// reaches it on. Nil if it can't be reached within a few seconds.
-    private static func address(of stream: Found) async -> String? {
+    /// reaches it on: all its announcements are tried at once, the first to
+    /// answer wins. Nil if none answers within a few seconds.
+    nonisolated static func address(of stream: Found) async -> String? {
+        await withTaskGroup(of: String?.self) { group in
+            for endpoint in stream.endpoints {
+                group.addTask { await connect(to: endpoint, stream: stream.name, timeout: 8) }
+            }
+            for await address in group {
+                if let address {
+                    group.cancelAll()
+                    return address
+                }
+            }
+            return nil
+        }
+    }
+
+    private nonisolated static func connect(to endpoint: NWEndpoint, stream: String, timeout: TimeInterval) async -> String? {
         let params = NWParameters.tcp
         if let ip = params.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
             ip.version = .v4
         }
-        let connection = NWConnection(to: stream.endpoint, using: params)
+        let connection = NWConnection(to: endpoint, using: params)
         let queue = DispatchQueue(label: "StreamFinder.resolve")
-        return await withCheckedContinuation { continuation in
+        // Cancelled once another announcement answered.
+        return await withTaskCancellationHandler { await withCheckedContinuation { continuation in
             let once = Once(continuation)
             let finish: @Sendable (String?) -> Void = { value in
                 connection.cancel()
@@ -82,7 +107,7 @@ enum StreamFinder {
                     if case let .hostPort(host, port) = connection.currentPath?.remoteEndpoint {
                         var text = "\(host)"
                         if let scope = text.firstIndex(of: "%") { text = String(text[..<scope]) }
-                        let name = stream.name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? stream.name
+                        let name = stream.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? stream
                         result = port.rawValue == 5970 ? "mkvm://\(text)/\(name)" : "mkvm://\(text):\(port.rawValue)/\(name)"
                     }
                     finish(result)
@@ -93,14 +118,11 @@ enum StreamFinder {
                 }
             }
             connection.start(queue: queue)
-            queue.asyncAfter(deadline: .now() + 3) { finish(nil) }
+            queue.asyncAfter(deadline: .now() + timeout) { finish(nil) }
+        } } onCancel: {
+            connection.cancel()
         }
     }
-}
-
-/// What the browser last saw; only touched on the browse queue.
-private final class Latest: @unchecked Sendable {
-    var list: [StreamFinder.Found] = []
 }
 
 /// Resumes a continuation at most once (connection callbacks and the timeout race).
