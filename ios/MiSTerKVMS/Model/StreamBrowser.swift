@@ -9,7 +9,9 @@ final class StreamBrowser: ObservableObject {
         let name: String
         let mister: String
         let server: String
-        let endpoint: NWEndpoint
+        /// Every entry advertised for this stream ("MiSTer-SS1", "MiSTer-SS1 (2)", …);
+        /// some may not resolve, so they're tried in turn.
+        var endpoints: [NWEndpoint]
         var id: String { "\(server)/\(name)" }
     }
 
@@ -20,16 +22,24 @@ final class StreamBrowser: ObservableObject {
         guard browser == nil else { return }
         let browser = NWBrowser(for: .bonjourWithTXTRecord(type: "_mkvm._tcp", domain: nil), using: .tcp)
         browser.browseResultsChangedHandler = { [weak self] results, _ in
-            let list = results.compactMap { result -> Found? in
+            let list = results.compactMap { result -> (instance: String, found: Found)? in
                 guard case let .service(name, _, _, _) = result.endpoint else { return nil }
                 var txt: [String: String] = [:]
                 if case let .bonjour(record) = result.metadata { txt = record.dictionary }
-                return Found(name: txt["stream"] ?? name, mister: txt["mister"] ?? "",
-                             server: txt["server"] ?? "", endpoint: result.endpoint)
+                return (name, Found(name: txt["stream"] ?? name, mister: txt["mister"] ?? "",
+                                    server: txt["server"] ?? "", endpoints: [result.endpoint]))
             }
-            // A server answers on each of its network adapters: one row per stream.
-            var seen = Set<String>()
-            let unique = list.filter { seen.insert($0.id).inserted }
+            // A server answers on each of its network adapters: one row per
+            // stream, keeping every entry (the plain name first).
+            var byID: [String: Found] = [:]
+            for (_, found) in list.sorted(by: { $0.instance < $1.instance }) {
+                if byID[found.id] == nil {
+                    byID[found.id] = found
+                } else {
+                    byID[found.id]?.endpoints += found.endpoints
+                }
+            }
+            let unique = byID.values
                 .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             Task { @MainActor in self?.found = unique }
         }
@@ -43,13 +53,22 @@ final class StreamBrowser: ObservableObject {
     }
 
     /// The stream's `mkvm://` address, with the IPv4 address the phone
-    /// reaches it on. Nil if it can't be reached within a few seconds.
+    /// reaches it on. Nil if it can't be reached within a few seconds. Each
+    /// advertised entry is tried in turn, sharing the time.
     static func address(of stream: Found) async -> String? {
+        let timeout = 5.0 / Double(max(stream.endpoints.count, 1))
+        for endpoint in stream.endpoints {
+            if let address = await address(of: stream, at: endpoint, timeout: max(timeout, 2)) { return address }
+        }
+        return nil
+    }
+
+    private static func address(of stream: Found, at endpoint: NWEndpoint, timeout: Double) async -> String? {
         let params = NWParameters.tcp
         if let ip = params.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
             ip.version = .v4
         }
-        let connection = NWConnection(to: stream.endpoint, using: params)
+        let connection = NWConnection(to: endpoint, using: params)
         return await withCheckedContinuation { continuation in
             let once = Once(continuation)
             connection.stateUpdateHandler = { state in
@@ -71,7 +90,7 @@ final class StreamBrowser: ObservableObject {
                 }
             }
             connection.start(queue: .main)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
                 connection.cancel()
                 once.resume(nil)
             }
