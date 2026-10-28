@@ -257,7 +257,10 @@ the app (not per host).
 ### 5.6 iPad and hardware input
 
 - Universal app (`TARGETED_DEVICE_FAMILY = "1,2"`): the same screens, every
-  orientation on iPad (portrait only on iPhone), no `UIRequiresFullScreen`.
+  orientation on iPad, no `UIRequiresFullScreen`. On iPhone portrait only,
+  except on a screen close to square (a foldable such as the iPhone Duo,
+  open), which turns to landscape too (`AppDelegate`, asked again when it
+  folds or unfolds).
   Text names the device (`Device.kind`: "iPhone" or "iPad").
 - **Hardware keyboard** (both devices): `KeyInputView` takes
   `pressesBegan`/`Ended` with `UIKey.keyCode` (USB HID usages) and sends each

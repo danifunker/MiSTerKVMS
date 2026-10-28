@@ -137,8 +137,9 @@ JPEG, no alpha, in `build/` (git-ignored):
 - `build/screenshots-duo/` (iPhone Duo, unfolded, 1398×2034; iOS 27.1
   simulator): the Pi with the keyboard (quick buttons folded), the Pi full
   screen with stats, the host list, the switcher, the controls sheet,
-  Settings. The Duo's status column takes the right edge; the toolbar
-  buttons move into it on its own.
+  Settings, and `07-landscape.jpg` (2034×1398: open, the Duo turns to
+  landscape and the picture fills the width). The Duo's status column
+  takes one edge; the toolbar buttons move into it on its own.
 - `build/screenshots-ipad/` (13", iPad Pro M5, 2752×2064 landscape): the
   Pi's menu, SS1's system settings, the switcher, the controls sheet,
   Settings.
