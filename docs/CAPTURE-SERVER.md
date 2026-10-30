@@ -92,9 +92,9 @@ hidden (fixed in 25eecb5). To keep it that way:
 
 ## 4. Protocol (MKVM v1)
 
-One TCP connection per viewer per stream, `TCP_NODELAY`. Encrypted with
-Noise unless the viewer turns it off, on the LAN too (IPHONE.md §3, §3.1);
-plain mkvm is still accepted from the home network.
+One TCP connection per viewer per stream, `TCP_NODELAY`, always encrypted
+with Noise, on the LAN too (IPHONE.md §3). The messages below travel inside
+it.
 
 - **Handshake:** the client sends a JSON `hello` (protocol version, viewer
   name, platform, decodable codecs); the server answers

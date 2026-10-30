@@ -441,15 +441,6 @@ final class AppModel: ObservableObject {
     @Published private(set) var screenshotNotice: String?
     private var noticeGeneration = 0
 
-    /// Encryption with capture PCs at home: "auto", "require" or "off".
-    var homeEncryption: String {
-        get { core.homeEncryption() }
-        set {
-            core.setHomeEncryption(mode: newValue)
-            objectWillChange.send()
-        }
-    }
-
     /// Screenshots get a bar with the core and the time.
     var screenshotStamp: Bool {
         get { core.screenshotStamp() }

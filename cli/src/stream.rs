@@ -7,6 +7,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use kvms_codec::{jpeg, Bgra};
+use mkvm::secure::{SecureReader, SecureWriter};
 use mkvm::{read_message, write_message, Codec, Hello, Message, StreamAddress, Subscribe};
 use serde_json::{json, Value};
 
@@ -33,9 +34,12 @@ pub fn watch(address: &str, duration: Duration, limits: Limits, save: Option<&Pa
     let sock = TcpStream::connect_timeout(&addr, Duration::from_secs(3)).map_err(|e| format!("connect {addr}: {e}"))?;
     sock.set_nodelay(true).ok();
     sock.set_read_timeout(Some(Duration::from_secs(5))).ok();
-    let mut w = sock.try_clone().map_err(|e| e.to_string())?;
-    let mut r = BufReader::with_capacity(256 * 1024, sock);
-    let send = |w: &mut TcpStream, m: &Message| write_message(w, m, now_100ns()).map_err(|e| e.to_string());
+    // Encrypted like every viewer (docs/IPHONE.md §3); no identity to check
+    // against, this is a one-off look.
+    let opened = mkvm::secure::connect_nx(&mut sock.try_clone().map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    let mut w = SecureWriter::new(sock.try_clone().map_err(|e| e.to_string())?, opened.session.clone());
+    let mut r = BufReader::with_capacity(256 * 1024, SecureReader::new(sock, opened.session));
+    let send = |w: &mut SecureWriter<TcpStream>, m: &Message| write_message(w, m, now_100ns()).map_err(|e| e.to_string());
     send(
         &mut w,
         &Message::Hello(Hello {

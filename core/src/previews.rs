@@ -288,15 +288,14 @@ mod tests {
     #[test]
     fn a_look_gets_a_picture_and_the_core() {
         use mkvm::*;
-        use std::io::BufReader;
         use std::net::TcpListener;
 
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let (mut sock, _) = listener.accept().unwrap();
-            let mut read = BufReader::new(sock.try_clone().unwrap());
+            let (sock, _) = listener.accept().unwrap();
+            let (mut read, mut sock) = crate::link::testing::accept(sock);
             let Message::Hello(hello) = read_message(&mut read).unwrap().0 else { panic!("no hello") };
             let info = StreamInfo {
                 name: hello.stream,
@@ -333,7 +332,7 @@ mod tests {
             }
         });
         let address = StreamAddress::parse(&format!("mkvm://127.0.0.1:{port}/MiSTer")).unwrap();
-        let found = peek(address, "Test (preview)".into(), None, Security::new(crate::link::Encryption::Off));
+        let found = peek(address, "Test (preview)".into(), None, Security::default());
         assert_eq!(found.caption, "SNES");
         let (_, w, h) = found.picture.expect("a picture");
         assert_eq!((w, h), (MAX_W, MAX_H));
@@ -347,7 +346,7 @@ mod tests {
         // Port 9: nothing listens.
         let address = StreamAddress::parse("mkvm://127.0.0.1:9/MiSTer").unwrap();
         let t = Instant::now();
-        let found = peek(address, "Test (preview)".into(), None, Security::new(crate::link::Encryption::Off));
+        let found = peek(address, "Test (preview)".into(), None, Security::default());
         assert_eq!(found.caption, "Offline");
         assert!(found.picture.is_none());
         assert!(t.elapsed() < PEEK_TIMEOUT);

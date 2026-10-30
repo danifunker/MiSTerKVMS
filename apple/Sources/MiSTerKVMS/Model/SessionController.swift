@@ -347,15 +347,6 @@ final class SessionController: ObservableObject {
     /// There's a picture to take.
     var canScreenshot: Bool { videoStats?.state == "connected" }
 
-    /// Encryption with capture servers at home: "auto", "require" or "off".
-    var homeEncryption: String {
-        get { core.homeEncryption() }
-        set {
-            core.setHomeEncryption(mode: newValue)
-            objectWillChange.send()
-        }
-    }
-
     /// Screenshots get a bar with the core and the time.
     var screenshotStamp: Bool {
         get { core.screenshotStamp() }

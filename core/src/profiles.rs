@@ -271,9 +271,6 @@ pub struct AppData {
     pub auto_capture: bool,
     /// The keys that give the keyboard and mouse back from capture.
     pub release_chord: crate::input::ReleaseChord,
-    /// Encryption with capture servers on the home network: "auto",
-    /// "require" or "off" (empty: this platform's default).
-    pub home_encryption: String,
     /// The identity each capture server host answered with first (host id
     /// → public key, hex), checked on every encrypted connection.
     pub server_keys: std::collections::BTreeMap<String, String>,
@@ -291,7 +288,6 @@ impl Default for AppData {
             screenshot_stamp: true,
             auto_capture: false,
             release_chord: Default::default(),
-            home_encryption: String::new(),
             server_keys: Default::default(),
         }
     }

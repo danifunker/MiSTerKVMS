@@ -52,19 +52,14 @@ never what anyone typed or did.
 ## Encryption
 
 Everything the apps send to your capture computer is encrypted (Noise, with
-ChaCha20-Poly1305), at home and away:
-
-- **Android:** always. The app doesn't connect to a capture computer that
-  can't encrypt (MiSTerKVMS Capture before 1.0.26); update it there.
-- **iPhone, Mac, Windows and Linux:** by default whenever the capture
-  computer can; their settings can require it, or turn it off on your home
-  network.
-- **From outside your home:** always, with the device's own key.
+ChaCha20-Poly1305), at home and away, in every app. They don't connect to a
+capture computer that can't encrypt (MiSTerKVMS Capture before 1.0.26):
+update it there.
 
 The first time an app connects to a capture computer it remembers that
-computer's identity, and notices if another computer answers in its place.
-The Mac App Store app's direct connection to a MiSTer (mrext Remote) isn't
-encrypted: mrext doesn't offer that, and it stays on your network.
+computer's identity, and won't connect if another computer answers in its
+place. The Mac App Store app's direct connection to a MiSTer (mrext Remote)
+isn't encrypted: mrext doesn't offer that, and it stays on your network.
 
 ## Removing a device from your capture computer
 

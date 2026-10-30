@@ -188,9 +188,6 @@
                     <AppBarButton x:Name="ReleaseKeysButton" Label="Release keys">
                         <AppBarButton.Icon><FontIcon Glyph="&#xE92E;" /></AppBarButton.Icon>
                     </AppBarButton>
-                    <AppBarButton x:Name="EncryptionButton" Label="Encrypt capture server streams">
-                        <AppBarButton.Icon><FontIcon Glyph="&#xE72E;" /></AppBarButton.Icon>
-                    </AppBarButton>
                     <AppBarToggleButton x:Name="AutoCaptureButton" Label="Capture when a host connects" Click="AutoCapture_Click"
                                         ToolTipService.ToolTip="Capture keyboard and mouse as soon as a host connects. Off, a host connects for watching: click the picture or press Capture (Ctrl+Shift+K). MiSTerKVMS.exe --auto-capture turns it on for that run.">
                         <AppBarToggleButton.Icon><FontIcon Glyph="&#xE962;" /></AppBarToggleButton.Icon>

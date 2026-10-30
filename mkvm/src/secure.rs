@@ -1,26 +1,20 @@
-//! Encrypted mkvm, for viewers connecting from the internet (docs/IPHONE.md
-//! §3). A paired device holds a 32-byte key the server issued it; the key
-//! never crosses the network again.
+//! Encrypted mkvm: every viewer connection (docs/IPHONE.md §3).
 //!
-//! 1. The viewer opens with a clear prelude: [`MAGIC`], [`VERSION`], its
-//!    16-byte key id. (A plain connection starts with a message kind, never
-//!    `M`, so the server tells them apart from the first byte.)
-//! 2. The server looks the key up and both run a Noise
-//!    `NNpsk0_25519_ChaChaPoly_BLAKE2s` handshake keyed with it: one round
-//!    trip; only a holder of the key completes it, and each connection gets
-//!    fresh session keys (forward secrecy).
-//! 3. After that the usual mkvm messages travel inside Noise transport
-//!    messages: a u16 length, then the ciphertext (at most 64 KiB, so a
-//!    video frame spans several).
+//! 1. The viewer opens with [`MAGIC_NX`], [`VERSION`] and a guard byte, then
+//!    a Noise `NX_25519_ChaChaPoly_BLAKE2s` handshake: one round trip, no key
+//!    of its own. The capture PC proves its long-term identity
+//!    ([`ServerIdentity`]); viewers remember it per host. Each connection
+//!    gets fresh session keys (forward secrecy).
+//! 2. The usual mkvm messages then travel inside Noise transport messages: a
+//!    u16 length, then the ciphertext (at most 64 KiB, so a video frame spans
+//!    several). Pairing too.
+//! 3. A paired device (a 32-byte key the server issued it, which never
+//!    crosses the network again) proves its key first, with a
+//!    [`device_proof`] in `Message::Device`, so its key id never travels in
+//!    the clear.
 //!
-//! Any viewer, paired or not, can instead open with [`MAGIC_NX`]: a Noise
-//! `NX` handshake with no key of its own. The capture PC proves its
-//! identity ([`ServerIdentity`]; viewers remember it per host), and the
-//! connection is encrypted from the first message, pairing included. A
-//! paired device then proves its key inside it with a [`device_proof`]
-//! (`Message::Device`), so its key id never travels in the clear. Older
-//! servers hang up on it at once and viewers may fall back to a plain
-//! connection (docs/IPHONE.md §3.1).
+//! Servers before 1.0.26 hang up on [`MAGIC_NX`] at once. Plain mkvm, and
+//! [`MAGIC`] (paired devices before 1.0.26), are refused.
 //!
 //! [`SecureReader`] and [`SecureWriter`] wrap the two halves of the socket,
 //! so `read_message`/`write_message` work on them unchanged and the reading
@@ -31,15 +25,15 @@ use std::sync::Arc;
 
 use snow::{Builder, StatelessTransportState};
 
-/// First bytes of an encrypted connection.
+/// First bytes of a paired device's connection before 1.0.26 (key id in the
+/// clear, then Noise `NNpsk0`): refused now, recognised to say so.
 pub const MAGIC: &[u8; 4] = b"MKVS";
 /// Version of this prelude and handshake.
 pub const VERSION: u8 = 1;
 pub const KEY_LEN: usize = 32;
 pub const KEY_ID_LEN: usize = 16;
 
-const NOISE: &str = "Noise_NNpsk0_25519_ChaChaPoly_BLAKE2s";
-/// First bytes of an encrypted connection without a device key.
+/// First bytes of an encrypted connection.
 pub const MAGIC_NX: &[u8; 4] = b"MKVN";
 const NOISE_NX: &str = "Noise_NX_25519_ChaChaPoly_BLAKE2s";
 /// After [`MAGIC_NX`] and the version. An older server reads the opening
@@ -147,7 +141,7 @@ impl ServerIdentity {
     }
 }
 
-/// A key-free encrypted connection, as the viewer sees it.
+/// An encrypted connection, as the viewer sees it.
 pub struct Opened {
     pub session: Session,
     /// The capture PC's identity (`ServerIdentity::public`).
@@ -156,7 +150,7 @@ pub struct Opened {
     pub handshake: [u8; HANDSHAKE_LEN],
 }
 
-/// What a paired device sends inside a key-free connection to show it holds
+/// What a paired device sends inside the encrypted connection to show it holds
 /// its key: a keyed BLAKE2s of this connection's handshake hash, so it
 /// can't be replayed on another connection.
 pub fn device_proof(key: &[u8; KEY_LEN], handshake: &[u8; HANDSHAKE_LEN]) -> [u8; 32] {
@@ -187,8 +181,8 @@ pub enum SecureError {
     /// The handshake failed: almost always a key the other side doesn't
     /// have (revoked, or paired with another server).
     Handshake(String),
-    /// The server hung up on a key-free encrypted connection: a version
-    /// from before them.
+    /// The server hung up on the encrypted connection: a version from before
+    /// 1.0.26.
     NotSupported,
 }
 
@@ -232,66 +226,7 @@ fn read_frame(r: &mut impl Read, buf: &mut Vec<u8>) -> io::Result<()> {
     r.read_exact(buf)
 }
 
-/// Viewer side: send the prelude and run the handshake on a fresh
-/// connection. Then wrap the socket's halves in [`SecureReader`] and
-/// [`SecureWriter`] with the returned session.
-pub fn connect(sock: &mut (impl Read + Write), key: &DeviceKey) -> Result<Session, SecureError> {
-    let mut prelude = Vec::with_capacity(5 + KEY_ID_LEN);
-    prelude.extend_from_slice(MAGIC);
-    prelude.push(VERSION);
-    prelude.extend_from_slice(&key.id);
-    sock.write_all(&prelude)?;
-    let mut noise = Builder::new(NOISE.parse().expect("valid noise pattern"))
-        .psk(0, &key.key)
-        .map_err(noise_err)?
-        .build_initiator()
-        .map_err(noise_err)?;
-    let mut buf = vec![0u8; MAX_MESSAGE];
-    let n = noise.write_message(&[], &mut buf).map_err(noise_err)?;
-    write_frame(sock, &buf[..n])?;
-    let mut reply = Vec::new();
-    read_frame(sock, &mut reply).map_err(|e| match e.kind() {
-        // The server hangs up on an unknown or revoked key (a reset when our
-        // handshake was still unread).
-        io::ErrorKind::UnexpectedEof | io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted => SecureError::Handshake(
-            "the capture server doesn't accept this device's key any more (revoked?): pair again on the home network".into(),
-        ),
-        _ => SecureError::Io(e),
-    })?;
-    noise.read_message(&reply, &mut buf).map_err(noise_err)?;
-    Ok(Arc::new(noise.into_stateless_transport_mode().map_err(noise_err)?))
-}
-
-/// Server side, after the first 4 bytes were found to be [`MAGIC`]: read
-/// the rest of the prelude and return the key id the viewer claims.
-pub fn read_prelude(sock: &mut impl Read) -> Result<[u8; KEY_ID_LEN], SecureError> {
-    let mut version = [0u8; 1];
-    sock.read_exact(&mut version)?;
-    if version[0] != VERSION {
-        return Err(SecureError::Prelude(format!("version {}", version[0])));
-    }
-    let mut id = [0u8; KEY_ID_LEN];
-    sock.read_exact(&mut id)?;
-    Ok(id)
-}
-
-/// Server side: run the handshake with the key looked up from the id.
-pub fn accept(sock: &mut (impl Read + Write), key: &[u8; KEY_LEN]) -> Result<Session, SecureError> {
-    let mut noise = Builder::new(NOISE.parse().expect("valid noise pattern"))
-        .psk(0, key)
-        .map_err(noise_err)?
-        .build_responder()
-        .map_err(noise_err)?;
-    let mut first = Vec::new();
-    read_frame(sock, &mut first)?;
-    let mut buf = vec![0u8; MAX_MESSAGE];
-    noise.read_message(&first, &mut buf).map_err(noise_err)?;
-    let n = noise.write_message(&[], &mut buf).map_err(noise_err)?;
-    write_frame(sock, &buf[..n])?;
-    Ok(Arc::new(noise.into_stateless_transport_mode().map_err(noise_err)?))
-}
-
-/// Viewer side of a key-free encrypted connection: send the prelude and run
+/// Viewer side of an encrypted connection: send the prelude and run
 /// the `NX` handshake. The caller checks `server_key` against the one it
 /// knows for this host.
 pub fn connect_nx(sock: &mut (impl Read + Write)) -> Result<Opened, SecureError> {
@@ -326,7 +261,7 @@ pub fn read_prelude_nx(sock: &mut impl Read) -> Result<(), SecureError> {
     Ok(())
 }
 
-/// Server side of a key-free encrypted connection. Returns the session and
+/// Server side of an encrypted connection. Returns the session and
 /// the handshake hash (to check a paired device's proof against).
 pub fn accept_nx(sock: &mut (impl Read + Write), identity: &ServerIdentity) -> Result<(Session, [u8; HANDSHAKE_LEN]), SecureError> {
     let mut noise = Builder::new(NOISE_NX.parse().expect("valid noise pattern"))
@@ -445,63 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn messages_pass_through_encrypted() {
-        let key = DeviceKey::generate().unwrap();
-        let (mut client, mut server) = pair();
-        let server_key = key.key;
-        let expected_id = key.id;
-        let srv = thread::spawn(move || {
-            let mut magic = [0u8; 4];
-            server.read_exact(&mut magic).unwrap();
-            assert_eq!(&magic, MAGIC);
-            assert_eq!(read_prelude(&mut server).unwrap(), expected_id);
-            let session = accept(&mut server, &server_key).unwrap();
-            let mut r = SecureReader::new(server.try_clone().unwrap(), session.clone());
-            let mut w = SecureWriter::new(server, session);
-            // Echo two messages back.
-            for _ in 0..2 {
-                let (m, h) = read_message(&mut r).unwrap();
-                write_message(&mut w, &m, h.timestamp).unwrap();
-            }
-        });
-        let session = connect(&mut client, &key).unwrap();
-        let mut r = SecureReader::new(client.try_clone().unwrap(), session.clone());
-        let mut w = SecureWriter::new(client, session);
-        let hello = Message::Hello(Hello {
-            protocol: 1,
-            stream: "MiSTer-SS1".into(),
-            viewer: "iPhone".into(),
-            platform: "ios".into(),
-            codecs: vec![Codec::Jpeg],
-        });
-        // Larger than one Noise message: split and reassembled.
-        let data: Vec<u8> = (0..300_000u32).map(|i| (i * 7) as u8).collect();
-        let video = Message::Video(Video { codec: Codec::Jpeg, keyframe: true, width: 1280, height: 720, data });
-        write_message(&mut w, &hello, 1).unwrap();
-        write_message(&mut w, &video, 2).unwrap();
-        assert_eq!(read_message(&mut r).unwrap().0, hello);
-        assert_eq!(read_message(&mut r).unwrap().0, video);
-        srv.join().unwrap();
-    }
-
-    #[test]
-    fn a_wrong_key_fails_the_handshake() {
-        let device = DeviceKey::generate().unwrap();
-        let other = DeviceKey::generate().unwrap();
-        let (mut client, mut server) = pair();
-        let srv = thread::spawn(move || {
-            let mut magic = [0u8; 4];
-            server.read_exact(&mut magic).unwrap();
-            read_prelude(&mut server).unwrap();
-            // The server has a different key for this id.
-            assert!(matches!(accept(&mut server, &other.key), Err(SecureError::Handshake(_))));
-        });
-        assert!(connect(&mut client, &device).is_err());
-        srv.join().unwrap();
-    }
-
-    #[test]
-    fn key_free_connection_is_encrypted_and_names_the_server() {
+    fn connection_is_encrypted_and_names_the_server() {
         let identity = ServerIdentity::generate().unwrap();
         let public = *identity.public();
         let (mut client, mut server) = pair();
@@ -513,8 +392,10 @@ mod tests {
             let (session, handshake) = accept_nx(&mut server, &identity).unwrap();
             let mut r = SecureReader::new(server.try_clone().unwrap(), session.clone());
             let mut w = SecureWriter::new(server, session);
-            let (m, h) = read_message(&mut r).unwrap();
-            write_message(&mut w, &m, h.timestamp).unwrap();
+            for _ in 0..2 {
+                let (m, h) = read_message(&mut r).unwrap();
+                write_message(&mut w, &m, h.timestamp).unwrap();
+            }
             handshake
         });
         let opened = connect_nx(&mut client).unwrap();
@@ -528,8 +409,13 @@ mod tests {
             platform: "android".into(),
             codecs: vec![Codec::Jpeg],
         });
+        // Larger than one Noise message: split and reassembled.
+        let data: Vec<u8> = (0..300_000u32).map(|i| (i * 7) as u8).collect();
+        let video = Message::Video(Video { codec: Codec::Jpeg, keyframe: true, width: 1280, height: 720, data });
         write_message(&mut w, &hello, 1).unwrap();
+        write_message(&mut w, &video, 2).unwrap();
         assert_eq!(read_message(&mut r).unwrap().0, hello);
+        assert_eq!(read_message(&mut r).unwrap().0, video);
         // Both ends agree on the handshake, so a device proof checks out.
         assert_eq!(srv.join().unwrap(), opened.handshake);
     }

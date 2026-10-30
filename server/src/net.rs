@@ -176,49 +176,32 @@ fn serve(server: Arc<Server>, sock: TcpStream) -> Result<(), String> {
         Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
         Err(e) => return Err(e.to_string()),
     }
-    // A paired device's encrypted connection (its key id in the clear), a
-    // key-free encrypted one (a paired device proves its key inside), or a
-    // plain one.
+    // Every viewer connects encrypted (docs/IPHONE.md §3); a paired device
+    // proves its key inside. Older viewers are told to update.
+    if &first == secure::MAGIC {
+        // A paired device from before 1.0.26: it can't read anything before
+        // its own handshake, so it just sees the connection close.
+        return Err("a paired device from before 1.0.26: update the MiSTerKVMS app on it".into());
+    }
+    if &first != secure::MAGIC_NX {
+        // Plain mkvm (an app before 1.0.26): it reads an error before Welcome.
+        let message = "This capture server encrypts every connection: update the MiSTerKVMS app (1.0.26 or later).";
+        let _ = write_message(&mut Sock(sock.clone()), &Message::Error(ErrorMsg { message: message.into() }), now_100ns());
+        return Err(format!("an unencrypted connection, from an app before 1.0.26 ({address})"));
+    }
+    secure::read_prelude_nx(&mut Sock(sock.clone())).map_err(|e| e.to_string())?;
+    let (session, handshake) = secure::accept_nx(&mut Sock(sock.clone()), &server.identity).map_err(|e| e.to_string())?;
+    let mut read: Reader = BufReader::with_capacity(64 * 1024, Box::new(SecureReader::new(Sock(sock.clone()), session.clone())));
+    let mut write: Writer = BufWriter::with_capacity(256 * 1024, Box::new(SecureWriter::new(Sock(sock.clone()), session)));
     let mut device_id = None;
-    let mut handshake = None;
-    let (mut read, mut write, mut device): (Reader, Writer, Option<String>) = if &first == secure::MAGIC_NX {
-        secure::read_prelude_nx(&mut Sock(sock.clone())).map_err(|e| e.to_string())?;
-        let (session, hash) = secure::accept_nx(&mut Sock(sock.clone()), &server.identity).map_err(|e| e.to_string())?;
-        handshake = Some(hash);
-        (
-            BufReader::with_capacity(64 * 1024, Box::new(SecureReader::new(Sock(sock.clone()), session.clone()))),
-            BufWriter::with_capacity(256 * 1024, Box::new(SecureWriter::new(Sock(sock.clone()), session))),
-            None,
-        )
-    } else if &first == secure::MAGIC {
-        let id = secure::read_prelude(&mut Sock(sock.clone())).map_err(|e| e.to_string())?;
-        if !home && !server.settings().remote_enabled {
-            return Err("an encrypted connection from the internet, but internet access is off".into());
-        }
-        let Some(key) = server.devices.key(&id) else {
-            // Slows down guessing; the key space makes it hopeless anyway.
-            thread::sleep(Duration::from_secs(1));
-            return Err(format!("unknown or revoked device key {}", secure::hex(&id)));
-        };
-        let session = secure::accept(&mut Sock(sock.clone()), &key).map_err(|e| e.to_string())?;
-        server.devices.connected(&id, &address, &sock);
-        device_id = Some(id);
-        (
-            BufReader::with_capacity(64 * 1024, Box::new(SecureReader::new(Sock(sock.clone()), session.clone()))),
-            BufWriter::with_capacity(256 * 1024, Box::new(SecureWriter::new(Sock(sock.clone()), session))),
-            server.devices.name(&id),
-        )
-    } else {
-        let replay = std::io::Cursor::new(first.to_vec()).chain(Sock(sock.clone()));
-        (BufReader::with_capacity(64 * 1024, Box::new(replay)), BufWriter::with_capacity(256 * 1024, Box::new(Sock(sock.clone()))), None)
-    };
+    let mut device: Option<String> = None;
     let refuse = |write: &mut Writer, message: String| {
         let _ = write_message(write, &Message::Error(ErrorMsg { message: message.clone() }), now_100ns());
         let _ = write.flush();
         Err(message)
     };
     let mut first = read_message(&mut read).map_err(|e| e.to_string())?.0;
-    if let (Message::Device(claim), Some(hash)) = (&first, handshake) {
+    if let Message::Device(claim) = &first {
         let id = secure::unhex(&claim.key_id);
         let key = id.and_then(|id| server.devices.key(&id));
         let proof = secure::unhex::<32>(&claim.proof);
@@ -229,7 +212,7 @@ fn serve(server: Arc<Server>, sock: TcpStream) -> Result<(), String> {
                 format!("This capture server doesn't know this device's key any more (removed?): pair again on the home network. ({})", claim.key_id),
             );
         };
-        if !secure::check_device_proof(&key, &hash, &proof) {
+        if !secure::check_device_proof(&key, &handshake, &proof) {
             thread::sleep(Duration::from_secs(1));
             return refuse(&mut write, format!("wrong proof for device key {}", claim.key_id));
         }
@@ -279,9 +262,8 @@ fn serve(server: Arc<Server>, sock: TcpStream) -> Result<(), String> {
     let id = NEXT_VIEWER.fetch_add(1, Ordering::Relaxed);
     let name = if hello.viewer.trim().is_empty() { format!("Viewer {id}") } else { hello.viewer.trim().to_string() };
     let via = match &device {
-        Some(d) if home => format!(", paired device '{d}', encrypted"),
+        Some(d) if home => format!(", paired device '{d}'"),
         Some(d) => format!(", paired device '{d}' from the internet ({address})"),
-        None if handshake.is_some() => ", encrypted".into(),
         None => String::new(),
     };
     log(&format!("viewer {id} '{name}' ({}{via}) joined '{}'", hello.platform, stream.config.name));

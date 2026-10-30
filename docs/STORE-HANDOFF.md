@@ -76,7 +76,7 @@ the capture server's API on this PC (`curl http://127.0.0.1:5971/api/remote`,
      - App activity, other user-generated content (keys, clicks, typed
        text): collected, **processed ephemerally**, required, app
        functionality. Not shown on the listing.
-     - Encrypted in transit: **Yes** (Android requires it, IPHONE.md §3.1).
+     - Encrypted in transit: **Yes** (every connection, IPHONE.md §3).
      - Users can request deletion: **Yes** (in the app, and the setup page;
        PRIVACY.md "Removing a device").
    - **Store listing line** for the device name, e.g.: "MiSTerKVMS sends
@@ -141,7 +141,7 @@ the user's own capture PC. Passed straight on (input) is still declared,
 marked processed ephemerally, and then not shown on the listing. The
 end-to-end exemption doesn't fit: the capture PC decrypts and acts on the
 data. "Encrypted in transit" may be claimed only if it covers all such data,
-hence Android's fixed "require" (no plain fallback, the key id inside the
-encryption). Deletion: there is no prescribed mechanism, only that it be easy
+which it does since 1.0.26: one encrypted protocol, no plain fallback, the
+key id inside the encryption. Deletion: there is no prescribed mechanism, only that it be easy
 to find; the app removes its own pairing, and PRIVACY.md and the app point
 to the setup page for the others.

@@ -109,78 +109,73 @@ setup page.
 
 ## 3. Secure transport
 
-On the same TCP port 5970, told apart by the first bytes:
+Every viewer connection is encrypted, at home and from the internet (since
+1.0.26; the Play Store's Data safety form says all data is encrypted in
+transit). On TCP port 5970:
 
-1. The phone sends a short clear prelude: magic `MKVS`, version, key id.
-2. The server looks the key id up. Unknown or revoked: it closes.
-3. Both run a **Noise `NNpsk0_25519_ChaChaPoly_BLAKE2s`** handshake (the
-   `snow` crate) with the device key as the pre-shared key. Two messages,
-   one round trip. Only a holder of the key can complete it; each connection
-   gets fresh session keys (forward secrecy), so a recorded session can't be
-   decrypted later even with the key.
-4. After that, the usual mkvm conversation (`hello`, `welcome`, video…)
-   runs inside Noise transport messages, split into chunks of at most
-   64 KB. ChaCha20-Poly1305 costs nothing noticeable at these bitrates.
+1. The viewer sends magic `MKVN`, version, `0xFF`, then runs a **Noise
+   `NX_25519_ChaChaPoly_BLAKE2s`** handshake (the `snow` crate): two
+   messages, one round trip. The viewer has no key of its own; the capture
+   PC proves its long-term identity (`server-key` in its config folder,
+   made once, readable only by the server's user). Each connection gets
+   fresh session keys (forward secrecy).
+2. Everything after runs inside Noise transport messages, split into chunks
+   of at most 64 KB: `hello`, `welcome`, video, and `Pair` and its reply
+   too. ChaCha20-Poly1305 costs nothing noticeable at these bitrates.
+3. A **paired device** sends `Device` first: its key id and a keyed BLAKE2s
+   of the handshake hash under its device key. Only a holder of the key can
+   make it, it can't be replayed on another connection, and the key id
+   never travels in the clear.
+4. **Forget:** after `Device`, `Forget` makes the capture PC drop the
+   device's key (as Remove on its setup page) and answer `Forgotten`. The
+   core sends it when a host's key is no longer used (the host deleted, or
+   "Use over the internet" turned off, and no other host of that capture PC
+   uses it), in the background; if the PC can't be reached, its setup page
+   still lists the device.
+
+**Identity pinning:** the core remembers the capture PC's identity per host
+(`serverKeys` in profiles.json) on the first connection, and refuses a
+different one later ("remove this MiSTer and add it again" if MiSTerKVMS
+Capture was reinstalled there). Editing a host to another address forgets
+it.
 
 Why not TLS: TLS wants certificates, which for a home server means
-self-signed ones and pinning. With a per-device key we already have a shared
-secret, and Noise with a pre-shared key is the standard way to use one:
-small, well studied (WireGuard uses the same design), no certificates.
+self-signed ones and pinning anyway. Noise is small and well studied
+(WireGuard uses the same framework), and the per-device key slots in as the
+device proof.
+
+**Older versions** (one protocol, no fallback):
+
+- A viewer before 1.0.26 sends plain mkvm: the server answers with an error
+  it shows ("…update the MiSTerKVMS app (1.0.26 or later)") and closes.
+- A paired viewer before 1.0.26 opens with `MKVS` (its key id in the clear):
+  the server logs it and closes; it can't read anything before its own
+  handshake.
+- A server before 1.0.26 reads `MKVN…` as a message header whose length
+  (bytes 2..6: `VN`, version, `0xFF`) is over its limit and hangs up at
+  once; the viewer says to update MiSTerKVMS Capture.
 
 Server rules:
 
-- Plain mkvm from a non-LAN address is refused ("this server needs a paired
-  device from outside the home network").
+- An unpaired viewer from a non-LAN address is refused ("this server needs
+  a paired device from outside the home network").
 - LAN means loopback, RFC 1918, link-local, CGNAT `100.64/10` excluded
   (that's a carrier's network), IPv6 ULA and link-local.
-- An encrypted connection from outside the home network is refused while
-  internet access is off, even with a valid key.
-- An unknown or revoked key is logged with its address and the connection
-  closed after a second's pause (it slows guessing; the key space makes
-  guessing hopeless anyway). The phone says the key isn't accepted any more
-  and to pair again at home.
+- A paired device from outside the home network is refused while internet
+  access is off.
+- An unknown or revoked key, or a wrong proof, is logged with its address
+  and the connection closed after a second's pause (it slows guessing; the
+  key space makes guessing hopeless anyway). The phone says the key isn't
+  accepted any more and to pair again at home.
 - Later, if needed: some routers rewrite the source of forwarded
   connections to their own home address, which would make internet clients
   look local; a `[remote] trust_lan = false` switch could then require
   pairing everywhere.
 
-### 3.1 Key-free encryption (every viewer, at home too)
-
-Added for the Play Store's "all data encrypted in transit": any viewer, paired
-or not, can open with magic `MKVN`, version, `0xFF`, then a **Noise
-`NX_25519_ChaChaPoly_BLAKE2s`** handshake. The viewer has no key; the capture
-PC proves its long-term identity (`server-key` in its config folder, made
-once, readable only by the server's user). From then on everything is inside
-Noise, `Pair` and its reply included.
-
-- **Identity pinning:** the core remembers the identity per host
-  (`serverKeys` in profiles.json) the first time. A different one later is
-  refused under "always" ("remove this MiSTer and add it again" if the
-  capture PC was reinstalled), and learned anew under "when the capture PC
-  can". Editing a host to another address forgets it.
-- **Paired devices** prove their key inside (`Device`: key id and a keyed
-  BLAKE2s of the handshake hash, so it can't be replayed), so the key id
-  never travels in the clear. `MKVS` stays for servers before 1.0.26.
-- **Forget:** after `Device`, `Forget` makes the capture PC drop the
-  device's key (as Remove on its setup page) and answer `Forgotten`. The
-  core sends it when a host's key is no longer used (the host deleted, or
-  "Use over the internet" turned off, and no other host of that capture PC
-  uses it), in the background; if the PC can't be reached, its setup page
-  still lists the device.
-- **Older servers** read `MKVN…` as a plain message header whose length
-  (bytes 2..6: `VN`, version, `0xFF`) is over their limit, and hang up at
-  once. The viewer then connects plain ("when the capture PC can") or says
-  to update the capture PC ("always").
-- **The setting** (`home_encryption`: auto / require / off) is the viewer's,
-  in the core. Android is always "require" (its Data safety form says all
-  data is encrypted in transit); the other apps default to "auto". Off
-  means plain at home; a paired device still uses `MKVS` with its key.
-
-The phone always uses the secure transport once it has a key, at home too
-(same code path, nothing to switch). It tries the route that worked last
-first (home or internet), giving it 1.5 s before the other; from the
-internet it asks for at most 30 fps at JPEG quality 70 (§4), and the
-session screen shows a globe next to the MiSTer's name.
+A paired phone tries the route that worked last first (home or internet),
+giving it 1.5 s before the other; from the internet it asks for at most
+30 fps at JPEG quality 70 (§4), and the session screen shows a globe next to
+the MiSTer's name.
 
 The **predictive cursor** keeps a separate switch and learned model for the
 internet (HostProfile `predictive_cursor_internet`, `cursor_*_internet`):

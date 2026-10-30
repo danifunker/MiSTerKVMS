@@ -304,11 +304,6 @@ fn call(c: &Arc<Controller>, r: Value) -> Result<Value, String> {
             c.set_stats_pinned(arg(&r, "pinned")?);
             done
         }
-        "homeEncryption" => Ok(json!(c.home_encryption())),
-        "setHomeEncryption" => {
-            c.set_home_encryption(arg(&r, "mode")?);
-            done
-        }
         "screenshotStamp" => Ok(json!(c.screenshot_stamp())),
         "setScreenshotStamp" => {
             c.set_screenshot_stamp(arg(&r, "on")?);

@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use crate::input::{KeyResult, MouseButton, ReleaseChord};
 use crate::keymap::hid;
-use crate::link::{Encryption, MkvmLink, Security, StreamState};
+use crate::link::{MkvmLink, Security, StreamState};
 use crate::log;
 use crate::previews::{self, HostPreview, Previews};
 use crate::profiles::{HostProfile, ProfileStore, SourceKind};
@@ -581,11 +581,7 @@ impl Controller {
                     if st.connected {
                         add(
                             "Route",
-                            match (st.internet, link.encrypted()) {
-                                (true, _) => "Internet, encrypted".into(),
-                                (false, true) => "Home network, encrypted".into(),
-                                (false, false) => "Home network".into(),
-                            },
+                            if st.internet { "Internet, encrypted" } else { "Home network, encrypted" }.into(),
                         );
                         add("Round trip", format!("{:.1} ms", st.round_trip_ms));
                     }
@@ -660,31 +656,6 @@ impl Controller {
 
     /// How this computer appears to other viewers (the computer's name
     /// unless set).
-    /// Encryption with capture servers on the home network: "auto" (when
-    /// the capture PC can), "require" or "off". Android always requires it.
-    pub fn home_encryption(&self) -> String {
-        self.inner.encryption().as_str().into()
-    }
-
-    /// Set it ("auto", "require" or "off"). Open hosts reconnect. Ignored
-    /// where it can't be changed (`home_encryption_locked`).
-    pub fn set_home_encryption(&self, mode: String) {
-        if self.home_encryption_locked() || Encryption::parse(&mode).is_none() {
-            return;
-        }
-        self.inner.store.change(|d| d.home_encryption = mode.clone());
-        if let Some(id) = self.open_profile_id() {
-            self.reopen_if_open(&id);
-        }
-        self.inner.notify(ControllerEvent::Changed);
-    }
-
-    /// The setting can't be changed here (Android: always encrypted, as its
-    /// store listing says).
-    pub fn home_encryption_locked(&self) -> bool {
-        cfg!(target_os = "android")
-    }
-
     pub fn viewer_name(&self) -> String {
         let name = self.inner.store.data().viewer_name;
         if name.trim().is_empty() {
@@ -1376,15 +1347,8 @@ impl Inner {
         self.observer.on_event(event);
     }
 
-    fn encryption(&self) -> Encryption {
-        if cfg!(target_os = "android") {
-            return Encryption::Require;
-        }
-        Encryption::parse(&self.store.data().home_encryption).unwrap_or(Encryption::Auto)
-    }
-
-    /// How a host's connections are encrypted, and the capture PC identity
-    /// it remembers (learned on the first encrypted connection).
+    /// The capture PC identity a host remembers (learned on its first
+    /// connection), for its connections to check.
     fn security_for(&self, profile: &HostProfile) -> Security {
         let pinned = self.store.data().server_keys.get(&profile.id).and_then(|k| mkvm::secure::unhex(k));
         let me = self.me.clone();
@@ -1399,7 +1363,7 @@ impl Inner {
                 }
             }
         });
-        Security { mode: self.encryption(), pinned, learned: Some(learned) }
+        Security { pinned, learned: Some(learned) }
     }
 
     /// `profile` stops using this device's key for its capture PC. If no other
@@ -2098,8 +2062,8 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let (tx, rx) = std::sync::mpsc::channel();
         thread::spawn(move || {
-            let (mut sock, _) = listener.accept().unwrap();
-            let mut read = sock.try_clone().unwrap();
+            let (sock, _) = listener.accept().unwrap();
+            let (mut read, mut sock) = crate::link::testing::accept(sock);
             let Message::Hello(hello) = read_message(&mut read).unwrap().0 else { panic!("no hello") };
             assert_eq!(hello.stream, "MiSTer SS1");
             let info = StreamInfo {
@@ -2133,8 +2097,6 @@ mod tests {
 
         let (c, events) = controller();
         c.set_auto_capture(true);
-        // The fake server speaks plain mkvm and takes one connection.
-        c.set_home_encryption("off".into());
         let p = HostProfile { stream: format!("mkvm://127.0.0.1:{port}/MiSTer%20SS1"), ..Default::default() };
         c.save_profile(p.clone());
         c.open(p.id);
