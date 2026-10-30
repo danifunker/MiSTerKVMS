@@ -3,9 +3,12 @@
 //! as the host is open; it reconnects by itself. The video session and the
 //! input session both use it (docs/CAPTURE-SERVER.md §4, §7).
 //!
-//! A paired device connects encrypted with its key (mkvm::secure), at home
-//! or, when home doesn't answer, at the server's internet address; from the
-//! internet it asks for fewer, lighter pictures (docs/IPHONE.md §3–4).
+//! Connections are encrypted unless the viewer turns that off
+//! (`Encryption`): key-free (mkvm::secure::MAGIC_NX) against the capture
+//! PC's identity, which the host remembers; a paired device proves its key
+//! inside. A paired device connects at home or, when home doesn't answer,
+//! at the server's internet address; from the internet it asks for fewer,
+//! lighter pictures (docs/IPHONE.md §3–4).
 
 use std::collections::HashMap;
 use std::io::{BufReader, Read, Write};
@@ -17,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use mkvm::secure::{self, DeviceKey, SecureReader, SecureWriter};
 use mkvm::{
-    read_message, write_message, Audio, Codec, ControlState, Hello, InputCmd, Message, MisterState, Pair, Paired, StreamAddress,
+    read_message, write_message, Audio, Codec, ControlState, Device, Hello, InputCmd, Message, MisterState, Pair, Paired, StreamAddress,
     Subscribe, Video, Welcome,
 };
 
@@ -34,6 +37,60 @@ const FIRST_TRY_TIMEOUT: Duration = Duration::from_millis(1500);
 /// From the internet a viewer asks for at most this, unless it asked for less.
 const INTERNET_FPS: f64 = 30.0;
 const INTERNET_QUALITY: u8 = 70;
+
+/// Whether connections are encrypted on the home network (from the internet
+/// they always are).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Encryption {
+    /// Plain at home (a paired device still encrypts with its key).
+    Off,
+    /// Encrypted when the capture PC can; plain with older ones.
+    Auto,
+    /// Encrypted, or not at all.
+    Require,
+}
+
+impl Encryption {
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "off" => Some(Self::Off),
+            "auto" => Some(Self::Auto),
+            "require" => Some(Self::Require),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Auto => "auto",
+            Self::Require => "require",
+        }
+    }
+}
+
+/// How a host's connections are encrypted, and the capture PC identity it
+/// answered with before.
+#[derive(Clone)]
+pub struct Security {
+    pub mode: Encryption,
+    pub pinned: Option<[u8; secure::PUBLIC_KEY_LEN]>,
+    /// Told the identity the first time (or a new one, when `mode` lets a
+    /// change pass), to remember for the host.
+    pub learned: Option<Arc<dyn Fn([u8; secure::PUBLIC_KEY_LEN]) + Send + Sync>>,
+}
+
+impl Security {
+    pub fn new(mode: Encryption) -> Self {
+        Self { mode, pinned: None, learned: None }
+    }
+}
+
+impl std::fmt::Debug for Security {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Security({}, pinned: {})", self.mode.as_str(), self.pinned.is_some())
+    }
+}
 
 /// A paired device's key, and where the server is reached from the internet.
 #[derive(Debug, Clone)]
@@ -71,6 +128,8 @@ pub struct StreamState {
     pub internet: bool,
     /// The capture PC's permanent id (empty: an older server).
     pub server_id: String,
+    /// The connection is encrypted.
+    pub encrypted: bool,
 }
 
 #[derive(Default)]
@@ -88,6 +147,10 @@ struct State {
     /// Server clock minus ours, 100 ns units.
     clock_offset: i64,
     round_trip_ms: f64,
+    encrypted: bool,
+    /// The server hung up on a key-free encrypted connection: an older
+    /// version. Plain from then on (`Encryption::Auto`).
+    old_server: bool,
 }
 
 pub struct MkvmLink {
@@ -96,6 +159,7 @@ pub struct MkvmLink {
     stop: AtomicBool,
     state: Mutex<State>,
     remote: Option<Remote>,
+    security: Security,
     /// The open connection: where messages are written, and its socket.
     conn: Mutex<Option<Conn>>,
     subscription: Mutex<Subscribe>,
@@ -107,18 +171,19 @@ impl MkvmLink {
     /// Start connecting to `address` (`mkvm://host/stream`). `viewer` is the
     /// name other viewers see.
     pub fn connect(address: StreamAddress, viewer: String) -> Arc<Self> {
-        Self::connect_with(address, viewer, None)
+        Self::connect_with(address, viewer, None, Security::new(Encryption::Auto))
     }
 
     /// Like `connect`, as a paired device: encrypted, and from the internet
     /// when home doesn't answer.
-    pub fn connect_with(address: StreamAddress, viewer: String, remote: Option<Remote>) -> Arc<Self> {
+    pub fn connect_with(address: StreamAddress, viewer: String, remote: Option<Remote>, security: Security) -> Arc<Self> {
         let link = Arc::new(Self {
             address,
             viewer,
             stop: AtomicBool::new(false),
             state: Mutex::new(State::default()),
             remote,
+            security,
             conn: Mutex::new(None),
             subscription: Mutex::new(Subscribe { video: false, audio: false, ..Default::default() }),
             media: Mutex::new(None),
@@ -157,6 +222,7 @@ impl MkvmLink {
             round_trip_ms: s.round_trip_ms,
             internet: s.connected && s.internet,
             server_id: s.welcome.as_ref().map(|w| w.server_id.clone()).unwrap_or_default(),
+            encrypted: s.connected && s.encrypted,
         }
     }
 
@@ -363,15 +429,87 @@ fn open(link: &MkvmLink) -> Result<(TcpStream, bool), String> {
     Err(errors.join("; "))
 }
 
+type Halves = (Box<dyn Read + Send>, Box<dyn Write + Send>);
+
+enum OpenError {
+    /// The server hung up on a key-free encrypted connection: an older one.
+    OldServer,
+    Failed(String),
+}
+
+/// Start a connection's encryption as `security` says: key-free against the
+/// capture PC's identity (a paired device then proves `key` inside), with
+/// the paired device's own key on servers before that (`old_server`), or
+/// plain. Returns the two halves and whether they're encrypted.
+fn secure_open(sock: &TcpStream, security: &Security, key: Option<&DeviceKey>, old_server: bool) -> Result<(Halves, bool), OpenError> {
+    let clone = || sock.try_clone().map_err(|e| OpenError::Failed(e.to_string()));
+    if security.mode == Encryption::Off || old_server {
+        if security.mode == Encryption::Require {
+            return Err(OpenError::Failed(secure::SecureError::NotSupported.to_string()));
+        }
+        return Ok(match key {
+            Some(key) => {
+                let session = secure::connect(&mut clone()?, key).map_err(|e| OpenError::Failed(e.to_string()))?;
+                ((Box::new(SecureReader::new(clone()?, session.clone())), Box::new(SecureWriter::new(clone()?, session))), true)
+            }
+            None => ((Box::new(clone()?), Box::new(clone()?)), false),
+        });
+    }
+    let opened = match secure::connect_nx(&mut clone()?) {
+        Ok(o) => o,
+        Err(secure::SecureError::NotSupported) => return Err(OpenError::OldServer),
+        Err(e) => return Err(OpenError::Failed(e.to_string())),
+    };
+    match security.pinned {
+        Some(pinned) if pinned == opened.server_key => {}
+        Some(_) if security.mode == Encryption::Require => {
+            return Err(OpenError::Failed(
+                "This capture PC answered with a different identity than before. If MiSTerKVMS Capture was reinstalled \
+                 there, remove this MiSTer and add it again; otherwise another computer may be answering in its place."
+                    .into(),
+            ))
+        }
+        pinned => {
+            if pinned.is_some() {
+                log("mkvm: the capture PC's identity changed; remembering the new one");
+            }
+            if let Some(learned) = &security.learned {
+                learned(opened.server_key);
+            }
+        }
+    }
+    let mut write: Box<dyn Write + Send> = Box::new(SecureWriter::new(clone()?, opened.session.clone()));
+    if let Some(key) = key {
+        let proof = secure::device_proof(&key.key, &opened.handshake);
+        let device = Message::Device(Device { key_id: key.id_hex(), proof: secure::hex(&proof) });
+        write_message(&mut write, &device, mkvm_now()).map_err(|e| OpenError::Failed(e.to_string()))?;
+    }
+    Ok(((Box::new(SecureReader::new(clone()?, opened.session)), write), true))
+}
+
+/// One request on its own connection to the home address: encrypted as
+/// `security` says, retried plain once if the server is older (`Auto`).
+fn request(address: &StreamAddress, security: &Security, key: Option<&DeviceKey>, timeout: Duration) -> Result<(TcpStream, Halves), String> {
+    let mut old_server = false;
+    loop {
+        let sock = tcp(address, CONNECT_TIMEOUT)?;
+        sock.set_read_timeout(Some(timeout)).ok();
+        match secure_open(&sock, security, key, old_server) {
+            Ok((halves, _)) => return Ok((sock, halves)),
+            Err(OpenError::OldServer) if security.mode == Encryption::Auto && !old_server => old_server = true,
+            Err(OpenError::OldServer) => return Err(secure::SecureError::NotSupported.to_string()),
+            Err(OpenError::Failed(e)) => return Err(e),
+        }
+    }
+}
+
 /// Ask a capture server on the home network for a device key, to connect
 /// from the internet with later (docs/IPHONE.md §2). `replaces`: the key
 /// this device had for it, which the server then drops.
-pub fn pair(address: &StreamAddress, device: &str, replaces: Option<String>) -> Result<Paired, String> {
-    let sock = tcp(address, CONNECT_TIMEOUT)?;
-    sock.set_read_timeout(Some(Duration::from_secs(10))).ok();
-    let mut write = sock.try_clone().map_err(|e| e.to_string())?;
+pub fn pair(address: &StreamAddress, device: &str, replaces: Option<String>, security: &Security) -> Result<Paired, String> {
+    let (_sock, (read, mut write)) = request(address, security, None, Duration::from_secs(10))?;
     write_message(&mut write, &Message::Pair(Pair { device: device.to_string(), replaces }), mkvm_now()).map_err(|e| e.to_string())?;
-    match read_message(&mut BufReader::new(sock)).map_err(|e| e.to_string())?.0 {
+    match read_message(&mut BufReader::new(read)).map_err(|e| e.to_string())?.0 {
         Message::Paired(p) => Ok(p),
         Message::Error(e) => Err(e.message),
         other => Err(format!("unexpected answer {other:?}")),
@@ -380,10 +518,8 @@ pub fn pair(address: &StreamAddress, device: &str, replaces: Option<String>) -> 
 
 /// The capture PC's permanent id, asked of a stream on the home network
 /// (Hello, Welcome, hang up). Empty from servers older than server ids.
-pub fn server_id(address: &StreamAddress, viewer: &str) -> Result<String, String> {
-    let sock = tcp(address, CONNECT_TIMEOUT)?;
-    sock.set_read_timeout(Some(Duration::from_secs(5))).ok();
-    let mut write = sock.try_clone().map_err(|e| e.to_string())?;
+pub fn server_id(address: &StreamAddress, viewer: &str, security: &Security) -> Result<String, String> {
+    let (sock, (read, mut write)) = request(address, security, None, Duration::from_secs(5))?;
     let hello = Message::Hello(Hello {
         protocol: mkvm::PROTOCOL_VERSION,
         stream: address.stream.clone(),
@@ -392,7 +528,7 @@ pub fn server_id(address: &StreamAddress, viewer: &str) -> Result<String, String
         codecs: vec![Codec::Jpeg],
     });
     write_message(&mut write, &hello, mkvm_now()).map_err(|e| e.to_string())?;
-    let answer = read_message(&mut BufReader::new(sock.try_clone().map_err(|e| e.to_string())?)).map_err(|e| e.to_string())?.0;
+    let answer = read_message(&mut BufReader::new(read)).map_err(|e| e.to_string())?.0;
     let _ = sock.shutdown(Shutdown::Both);
     match answer {
         Message::Welcome(w) => Ok(w.server_id),
@@ -401,18 +537,50 @@ pub fn server_id(address: &StreamAddress, viewer: &str) -> Result<String, String
     }
 }
 
+/// Tell the capture PC this device is done with it: it drops the device's
+/// key, as removing it on its setup page does. Tried at home, then at the
+/// internet address. Always encrypted (the device proves its key inside);
+/// servers older than that can't do it.
+pub fn forget(home: &StreamAddress, internet: Option<&StreamAddress>, security: &Security, key: &DeviceKey) -> Result<(), String> {
+    let security = Security { mode: Encryption::Require, ..security.clone() };
+    let mut errors = Vec::new();
+    for (address, label) in [(Some(home), "at home"), (internet, "from the internet")] {
+        let Some(address) = address else { continue };
+        let attempt = || -> Result<(), String> {
+            let (_sock, (read, mut write)) = request(address, &security, Some(key), Duration::from_secs(5))?;
+            write_message(&mut write, &Message::Forget, mkvm_now()).map_err(|e| e.to_string())?;
+            match read_message(&mut BufReader::new(read)).map_err(|e| e.to_string())?.0 {
+                Message::Forgotten => Ok(()),
+                Message::Error(e) => Err(e.message),
+                other => Err(format!("unexpected answer {other:?}")),
+            }
+        };
+        match attempt() {
+            Ok(()) => return Ok(()),
+            Err(e) => errors.push(format!("{label}: {e}")),
+        }
+    }
+    Err(errors.join("; "))
+}
+
 /// One connection, from connect to close.
 fn session(link: &Arc<MkvmLink>) -> Result<(), String> {
-    let (sock, internet) = open(link)?;
-    sock.set_nodelay(true).ok();
-    sock.set_read_timeout(Some(SILENT_LIMIT)).ok();
-    let clone = || sock.try_clone().map_err(|e| e.to_string());
-    let (read, mut write): (Box<dyn Read + Send>, Box<dyn Write + Send>) = match &link.remote {
-        Some(remote) => {
-            let session = secure::connect(&mut clone()?, &remote.key).map_err(|e| e.to_string())?;
-            (Box::new(SecureReader::new(clone()?, session.clone())), Box::new(SecureWriter::new(clone()?, session)))
+    let key = link.remote.as_ref().map(|r| &r.key);
+    let (sock, internet, (read, mut write), encrypted) = loop {
+        let (sock, internet) = open(link)?;
+        sock.set_nodelay(true).ok();
+        sock.set_read_timeout(Some(SILENT_LIMIT)).ok();
+        let old_server = link.state.lock().unwrap().old_server;
+        match secure_open(&sock, &link.security, key, old_server) {
+            Ok((halves, encrypted)) => break (sock, internet, halves, encrypted),
+            // Once: from now on this link knows.
+            Err(OpenError::OldServer) if link.security.mode == Encryption::Auto => {
+                log(&format!("mkvm: {} is an older capture server: connecting without encryption", link.address));
+                link.state.lock().unwrap().old_server = true;
+            }
+            Err(OpenError::OldServer) => return Err(secure::SecureError::NotSupported.to_string()),
+            Err(OpenError::Failed(e)) => return Err(e),
         }
-        None => (Box::new(clone()?), Box::new(clone()?)),
     };
     let hello = Message::Hello(Hello {
         protocol: mkvm::PROTOCOL_VERSION,
@@ -431,7 +599,7 @@ fn session(link: &Arc<MkvmLink>) -> Result<(), String> {
     log(&format!(
         "mkvm: {} connected{} ({} {}x{}, MiSTer {:?})",
         link.address,
-        match (internet, link.remote.is_some()) {
+        match (internet, encrypted) {
             (true, _) => " from the internet, encrypted",
             (false, true) => ", encrypted",
             _ => "",
@@ -445,6 +613,7 @@ fn session(link: &Arc<MkvmLink>) -> Result<(), String> {
         let mut s = link.state.lock().unwrap();
         s.internet = internet;
         s.prefer_internet = internet;
+        s.encrypted = encrypted;
     }
     let sub = link.subscription.lock().unwrap().clone();
     write_message(&mut write, &Message::Subscribe(link.effective(sub)), mkvm_now()).map_err(|e| e.to_string())?;
@@ -521,5 +690,132 @@ fn session(link: &Arc<MkvmLink>) -> Result<(), String> {
             Message::Error(e) => return Err(e.message),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mkvm::secure::ServerIdentity;
+    use mkvm::{ErrorMsg, StreamInfo, WireError};
+    use std::net::TcpListener;
+
+    fn welcome() -> Message {
+        let stream = StreamInfo {
+            name: "MiSTer-SS1".into(),
+            mister: None,
+            width: 0,
+            height: 0,
+            fps: 0.0,
+            audio_rate: 48000,
+            audio_channels: 2,
+            sizes: vec![],
+            codecs: vec![Codec::Jpeg],
+        };
+        Message::Welcome(Welcome { protocol: 1, server: "test".into(), server_id: "abc".into(), viewer_id: 1, stream })
+    }
+
+    /// A capture server from before encrypted connections: it reads the
+    /// opening bytes as a message and hangs up on anything but plain mkvm.
+    fn older_server() -> StreamAddress {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            for sock in listener.incoming().flatten() {
+                let mut read = BufReader::new(sock.try_clone().unwrap());
+                let mut sock = sock;
+                match read_message(&mut read) {
+                    Ok((Message::Hello(_), _)) => write_message(&mut sock, &welcome(), 0).unwrap(),
+                    Err(WireError::TooLarge(_)) => {}
+                    other => panic!("unexpected {other:?}"),
+                }
+            }
+        });
+        StreamAddress::parse(&format!("mkvm://127.0.0.1:{port}/MiSTer-SS1")).unwrap()
+    }
+
+    /// A current capture server: key-free encrypted connections, a paired
+    /// device's proof, and Forget.
+    fn server(identity: ServerIdentity, device: Option<DeviceKey>) -> StreamAddress {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            for mut sock in listener.incoming().flatten() {
+                let mut magic = [0u8; 4];
+                sock.read_exact(&mut magic).unwrap();
+                assert_eq!(&magic, secure::MAGIC_NX);
+                secure::read_prelude_nx(&mut sock).unwrap();
+                let (session, handshake) = secure::accept_nx(&mut sock, &identity).unwrap();
+                let mut read = BufReader::new(SecureReader::new(sock.try_clone().unwrap(), session.clone()));
+                let mut write = SecureWriter::new(sock, session);
+                // A viewer that refused the identity hangs up here.
+                let Ok((mut first, _)) = read_message(&mut read) else { continue };
+                if let Message::Device(claim) = &first {
+                    let ok = device.as_ref().is_some_and(|d| {
+                        claim.key_id == d.id_hex()
+                            && secure::check_device_proof(&d.key, &handshake, &secure::unhex::<32>(&claim.proof).unwrap())
+                    });
+                    if !ok {
+                        write_message(&mut write, &Message::Error(ErrorMsg { message: "unknown device".into() }), 0).unwrap();
+                        continue;
+                    }
+                    first = read_message(&mut read).unwrap().0;
+                }
+                let answer = match first {
+                    Message::Hello(_) => welcome(),
+                    Message::Forget => Message::Forgotten,
+                    other => panic!("unexpected {other:?}"),
+                };
+                write_message(&mut write, &answer, 0).unwrap();
+            }
+        });
+        StreamAddress::parse(&format!("mkvm://127.0.0.1:{port}/MiSTer-SS1")).unwrap()
+    }
+
+    fn remembering(mode: Encryption, pinned: Option<[u8; 32]>) -> (Security, Arc<Mutex<Option<[u8; 32]>>>) {
+        let seen = Arc::new(Mutex::new(None));
+        let keep = seen.clone();
+        (Security { mode, pinned, learned: Some(Arc::new(move |k| *keep.lock().unwrap() = Some(k))) }, seen)
+    }
+
+    #[test]
+    fn auto_falls_back_on_an_older_server_and_require_refuses() {
+        let address = older_server();
+        assert_eq!(server_id(&address, "Pixel", &Security::new(Encryption::Auto)).unwrap(), "abc");
+        let refused = server_id(&address, "Pixel", &Security::new(Encryption::Require)).unwrap_err();
+        assert!(refused.contains("update MiSTerKVMS Capture"), "{refused}");
+        assert_eq!(server_id(&address, "Pixel", &Security::new(Encryption::Off)).unwrap(), "abc");
+    }
+
+    #[test]
+    fn the_capture_pc_identity_is_learned_then_checked() {
+        let identity = ServerIdentity::generate().unwrap();
+        let public = *identity.public();
+        let address = server(identity, None);
+        // First time: learned.
+        let (security, seen) = remembering(Encryption::Require, None);
+        assert_eq!(server_id(&address, "Pixel", &security).unwrap(), "abc");
+        assert_eq!(*seen.lock().unwrap(), Some(public));
+        // Same identity: fine, nothing new.
+        let (security, seen) = remembering(Encryption::Require, Some(public));
+        server_id(&address, "Pixel", &security).unwrap();
+        assert_eq!(*seen.lock().unwrap(), None);
+        // Another identity: refused when required, learned anew otherwise.
+        let (security, _) = remembering(Encryption::Require, Some([9; 32]));
+        assert!(server_id(&address, "Pixel", &security).unwrap_err().contains("different identity"));
+        let (security, seen) = remembering(Encryption::Auto, Some([9; 32]));
+        server_id(&address, "Pixel", &security).unwrap();
+        assert_eq!(*seen.lock().unwrap(), Some(public));
+    }
+
+    #[test]
+    fn a_paired_device_proves_its_key_and_can_be_forgotten() {
+        let key = DeviceKey::generate().unwrap();
+        let address = server(ServerIdentity::generate().unwrap(), Some(key.clone()));
+        forget(&address, None, &Security::new(Encryption::Auto), &key).unwrap();
+        let stranger = DeviceKey::generate().unwrap();
+        assert!(forget(&address, None, &Security::new(Encryption::Auto), &stranger).unwrap_err().contains("unknown device"));
+        // Forgetting needs encryption: an older server can't.
+        assert!(forget(&older_server(), None, &Security::new(Encryption::Auto), &key).is_err());
     }
 }

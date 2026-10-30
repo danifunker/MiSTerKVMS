@@ -176,9 +176,21 @@ fn serve(server: Arc<Server>, sock: TcpStream) -> Result<(), String> {
         Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
         Err(e) => return Err(e.to_string()),
     }
-    // A paired device's encrypted connection, or a plain one.
+    // A paired device's encrypted connection (its key id in the clear), a
+    // key-free encrypted one (a paired device proves its key inside), or a
+    // plain one.
     let mut device_id = None;
-    let (mut read, mut write, mut device): (Reader, Writer, Option<String>) = if &first == secure::MAGIC {
+    let mut handshake = None;
+    let (mut read, mut write, mut device): (Reader, Writer, Option<String>) = if &first == secure::MAGIC_NX {
+        secure::read_prelude_nx(&mut Sock(sock.clone())).map_err(|e| e.to_string())?;
+        let (session, hash) = secure::accept_nx(&mut Sock(sock.clone()), &server.identity).map_err(|e| e.to_string())?;
+        handshake = Some(hash);
+        (
+            BufReader::with_capacity(64 * 1024, Box::new(SecureReader::new(Sock(sock.clone()), session.clone()))),
+            BufWriter::with_capacity(256 * 1024, Box::new(SecureWriter::new(Sock(sock.clone()), session))),
+            None,
+        )
+    } else if &first == secure::MAGIC {
         let id = secure::read_prelude(&mut Sock(sock.clone())).map_err(|e| e.to_string())?;
         if !home && !server.settings().remote_enabled {
             return Err("an encrypted connection from the internet, but internet access is off".into());
@@ -205,7 +217,39 @@ fn serve(server: Arc<Server>, sock: TcpStream) -> Result<(), String> {
         let _ = write.flush();
         Err(message)
     };
-    let first = read_message(&mut read).map_err(|e| e.to_string())?.0;
+    let mut first = read_message(&mut read).map_err(|e| e.to_string())?.0;
+    if let (Message::Device(claim), Some(hash)) = (&first, handshake) {
+        let id = secure::unhex(&claim.key_id);
+        let key = id.and_then(|id| server.devices.key(&id));
+        let proof = secure::unhex::<32>(&claim.proof);
+        let (Some(id), Some(key), Some(proof)) = (id, key, proof) else {
+            thread::sleep(Duration::from_secs(1));
+            return refuse(
+                &mut write,
+                format!("This capture server doesn't know this device's key any more (removed?): pair again on the home network. ({})", claim.key_id),
+            );
+        };
+        if !secure::check_device_proof(&key, &hash, &proof) {
+            thread::sleep(Duration::from_secs(1));
+            return refuse(&mut write, format!("wrong proof for device key {}", claim.key_id));
+        }
+        if !home && !server.settings().remote_enabled {
+            return refuse(&mut write, "Internet access is off on this capture server.".into());
+        }
+        device = server.devices.name(&id);
+        device_id = Some(id);
+        first = read_message(&mut read).map_err(|e| e.to_string())?.0;
+        if first == Message::Forget {
+            let name = device.unwrap_or_default();
+            log(&format!("devices: '{name}' asked to be forgotten"));
+            // Answer first: removing the device hangs up its connections.
+            let _ = write_message(&mut write, &Message::Forgotten, now_100ns());
+            let _ = write.flush();
+            server.devices.revoke(&secure::hex(&id));
+            return Ok(());
+        }
+        server.devices.connected(&id, &address, &sock);
+    }
     if device.is_none() && !home {
         return refuse(
             &mut write,
@@ -237,6 +281,7 @@ fn serve(server: Arc<Server>, sock: TcpStream) -> Result<(), String> {
     let via = match &device {
         Some(d) if home => format!(", paired device '{d}', encrypted"),
         Some(d) => format!(", paired device '{d}' from the internet ({address})"),
+        None if handshake.is_some() => ", encrypted".into(),
         None => String::new(),
     };
     log(&format!("viewer {id} '{name}' ({}{via}) joined '{}'", hello.platform, stream.config.name));

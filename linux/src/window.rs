@@ -219,6 +219,11 @@ impl Ui {
             release_keys.append(Some(&o.name), Some(&format!("win.release-chord::{}", o.id)));
         }
         app_section.append_submenu(Some("Release Keys"), &release_keys);
+        let encryption = gio::Menu::new();
+        encryption.append(Some("When the Capture PC Can"), Some("win.home-encryption::auto"));
+        encryption.append(Some("Always"), Some("win.home-encryption::require"));
+        encryption.append(Some("Off"), Some("win.home-encryption::off"));
+        app_section.append_submenu(Some("Encrypt Capture Server Streams"), &encryption);
         app_section.append(Some("Core and Time on Screenshots"), Some("win.screenshot-stamp"));
         app_section.append(Some("Export Hosts…"), Some("win.export"));
         app_section.append(Some("Import Hosts…"), Some("win.import"));
@@ -666,6 +671,19 @@ impl Ui {
             }
         });
         w.add_action(&chord);
+        let encryption =
+            gio::SimpleAction::new_stateful("home-encryption", Some(glib::VariantTy::STRING), &self.core.home_encryption().to_variant());
+        encryption.connect_activate(|action, param| {
+            let (Some(ui), Some(mode)) = (ui(), param.and_then(|p| p.str().map(str::to_string))) else { return };
+            ui.core.set_home_encryption(mode.clone());
+            action.set_state(&mode.to_variant());
+            ui.toast(match mode.as_str() {
+                "require" => "Streams are always encrypted: capture PCs need MiSTerKVMS Capture 1.0.26 or later",
+                "off" => "Streams on your home network arrive without encryption",
+                _ => "Streams are encrypted when the capture PC can",
+            });
+        });
+        w.add_action(&encryption);
         // Hosts' pictures shrink to fit as the window changes.
         for prop in ["default-height", "maximized", "fullscreened"] {
             w.connect_notify_local(Some(prop), |_, _| {

@@ -1,6 +1,6 @@
 # MiSTerKVMS privacy policy
 
-Effective 27 October 2026.
+Effective 30 October 2026.
 
 This policy covers the MiSTerKVMS apps distributed through app stores: the
 iPhone app, the Mac App Store app and the Android app. They're free, open
@@ -45,14 +45,38 @@ When you turn on **Use over the internet** for a MiSTer (iPhone and
 Android), the app pairs with your capture computer while you're on the
 same network. The capture computer gives this device its own key and keeps
 a list of paired devices on that computer: each one's name, when it was
-paired and last connected, and the address it last connected from. You can
-remove a device from that list on the capture computer's setup page at any
-time. Its log file notes when a device pairs and who has control, by the
-device's name, never what anyone typed or did.
+paired and last connected, and the address it last connected from. Its log
+file notes when a device pairs and who has control, by the device's name,
+never what anyone typed or did.
 
-Connections from outside your home are encrypted end to end with that key,
-between this device and your capture computer. On your home network the
-connection isn't encrypted; it doesn't leave your network.
+## Encryption
+
+Everything the apps send to your capture computer is encrypted (Noise, with
+ChaCha20-Poly1305), at home and away:
+
+- **Android:** always. The app doesn't connect to a capture computer that
+  can't encrypt (MiSTerKVMS Capture before 1.0.26); update it there.
+- **iPhone, Mac, Windows and Linux:** by default whenever the capture
+  computer can; their settings can require it, or turn it off on your home
+  network.
+- **From outside your home:** always, with the device's own key.
+
+The first time an app connects to a capture computer it remembers that
+computer's identity, and notices if another computer answers in its place.
+The Mac App Store app's direct connection to a MiSTer (mrext Remote) isn't
+encrypted: mrext doesn't offer that, and it stays on your network.
+
+## Removing a device from your capture computer
+
+- **From the app:** turn off **Use over the internet** for the MiSTer, or
+  delete the MiSTer. The app tells the capture computer to remove this
+  device (its name, key and connection times). If the capture computer
+  can't be reached then, it keeps the entry until you remove it there.
+- **Other devices** (an old or lost phone): on the capture computer, open
+  its setup page, http://localhost:5971, and remove them under Devices.
+
+Deleting the app removes everything it kept on the device (below). The
+capture computer's log file is yours: delete it there whenever you like.
 
 All of this stays between your device and computers you run. No one else
 receives it: not the developer, and no third-party service is involved.

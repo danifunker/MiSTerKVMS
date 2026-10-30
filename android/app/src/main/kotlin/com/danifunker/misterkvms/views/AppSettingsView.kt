@@ -77,6 +77,13 @@ fun AppSettingsView(model: AppModel, onDone: () -> Unit) {
                     "shows on the capture PC the next time this phone connects.",
             )
 
+            Heading("Encryption")
+            Note(
+                "This phone's connections to capture PCs are always encrypted, at home and away. The first time it " +
+                    "connects to a capture PC it remembers that PC's identity, and won't connect if another computer " +
+                    "answers in its place. Capture PCs need MiSTerKVMS Capture 1.0.26 or later.",
+            )
+
             SwitchRow("Demo mode", demo) { demo = it }
             Note(
                 "Adds a Demo host to the list: a test pattern with sound instead of a MiSTer, and everything you " +

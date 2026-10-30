@@ -144,6 +144,38 @@ Server rules:
   look local; a `[remote] trust_lan = false` switch could then require
   pairing everywhere.
 
+### 3.1 Key-free encryption (every viewer, at home too)
+
+Added for the Play Store's "all data encrypted in transit": any viewer, paired
+or not, can open with magic `MKVN`, version, `0xFF`, then a **Noise
+`NX_25519_ChaChaPoly_BLAKE2s`** handshake. The viewer has no key; the capture
+PC proves its long-term identity (`server-key` in its config folder, made
+once, readable only by the server's user). From then on everything is inside
+Noise, `Pair` and its reply included.
+
+- **Identity pinning:** the core remembers the identity per host
+  (`serverKeys` in profiles.json) the first time. A different one later is
+  refused under "always" ("remove this MiSTer and add it again" if the
+  capture PC was reinstalled), and learned anew under "when the capture PC
+  can". Editing a host to another address forgets it.
+- **Paired devices** prove their key inside (`Device`: key id and a keyed
+  BLAKE2s of the handshake hash, so it can't be replayed), so the key id
+  never travels in the clear. `MKVS` stays for servers before 1.0.26.
+- **Forget:** after `Device`, `Forget` makes the capture PC drop the
+  device's key (as Remove on its setup page) and answer `Forgotten`. The
+  core sends it when a host's key is no longer used (the host deleted, or
+  "Use over the internet" turned off, and no other host of that capture PC
+  uses it), in the background; if the PC can't be reached, its setup page
+  still lists the device.
+- **Older servers** read `MKVN…` as a plain message header whose length
+  (bytes 2..6: `VN`, version, `0xFF`) is over their limit, and hang up at
+  once. The viewer then connects plain ("when the capture PC can") or says
+  to update the capture PC ("always").
+- **The setting** (`home_encryption`: auto / require / off) is the viewer's,
+  in the core. Android is always "require" (its Data safety form says all
+  data is encrypted in transit); the other apps default to "auto". Off
+  means plain at home; a paired device still uses `MKVS` with its key.
+
 The phone always uses the secure transport once it has a key, at home too
 (same code path, nothing to switch). It tries the route that worked last
 first (home or internet), giving it 1.5 s before the other; from the

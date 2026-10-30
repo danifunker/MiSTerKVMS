@@ -181,6 +181,9 @@ mod tests {
             quality: Some(70),
         }));
         round_trip(Message::Pair(Pair { device: "Dani's iPhone".into(), replaces: Some("00112233445566778899aabbccddeeff".into()) }));
+        round_trip(Message::Device(Device { key_id: "00112233445566778899aabbccddeeff".into(), proof: "ab".repeat(32) }));
+        round_trip(Message::Forget);
+        round_trip(Message::Forgotten);
         round_trip(Message::Paired(Paired {
             key_id: "00112233445566778899aabbccddeeff".into(),
             key: "ab".repeat(32),

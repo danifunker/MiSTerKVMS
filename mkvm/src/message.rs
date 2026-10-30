@@ -16,6 +16,8 @@ pub enum Kind {
     TakeControl = 0x04,
     Pair = 0x05,
     ReleaseControl = 0x06,
+    Device = 0x07,
+    Forget = 0x08,
     Ping = 0x10,
     Pong = 0x11,
     Welcome = 0x20,
@@ -28,6 +30,7 @@ pub enum Kind {
     Error = 0x27,
     Status = 0x28,
     Paired = 0x29,
+    Forgotten = 0x2a,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -212,6 +215,15 @@ pub struct Pair {
     pub replaces: Option<String>,
 }
 
+/// Viewer → server, first inside a key-free encrypted connection
+/// (`secure::MAGIC_NX`): this is a paired device. `proof` is
+/// `secure::device_proof` for this connection, in hex.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Device {
+    pub key_id: String,
+    pub proof: String,
+}
+
 /// Server → viewer: the new device key (hex) and where the server can be
 /// reached from the internet ("host:port", empty if not set yet).
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -248,6 +260,13 @@ pub enum Message {
     ReleaseControl,
     Pair(Pair),
     Paired(Paired),
+    /// A paired device proves its key (after `secure::MAGIC_NX`, before
+    /// `Hello` or `Forget`).
+    Device(Device),
+    /// After `Device`: the device is done with this capture PC, which drops
+    /// its key and answers `Forgotten`.
+    Forget,
+    Forgotten,
     /// Keep-alive. The header timestamp is the sender's clock.
     Ping,
     /// Answer to `Ping`: `echo` is the ping's timestamp, the header's is the
@@ -284,6 +303,9 @@ impl Message {
             Message::ReleaseControl => Kind::ReleaseControl,
             Message::Pair(_) => Kind::Pair,
             Message::Paired(_) => Kind::Paired,
+            Message::Device(_) => Kind::Device,
+            Message::Forget => Kind::Forget,
+            Message::Forgotten => Kind::Forgotten,
             Message::Ping => Kind::Ping,
             Message::Pong { .. } => Kind::Pong,
             Message::Welcome(_) => Kind::Welcome,
@@ -306,9 +328,10 @@ impl Message {
             Message::Hello(m) => (0, json(m)),
             Message::Subscribe(m) => (0, json(m)),
             Message::Input(m) => (0, json(m)),
-            Message::TakeControl | Message::ReleaseControl | Message::Ping => (0, Vec::new()),
+            Message::TakeControl | Message::ReleaseControl | Message::Ping | Message::Forget | Message::Forgotten => (0, Vec::new()),
             Message::Pair(m) => (0, json(m)),
             Message::Paired(m) => (0, json(m)),
+            Message::Device(m) => (0, json(m)),
             Message::Pong { echo } => (0, echo.to_le_bytes().to_vec()),
             Message::Welcome(m) => (0, json(m)),
             Message::Video(v) => {
@@ -347,6 +370,9 @@ impl Message {
             0x04 => Message::TakeControl,
             0x06 => Message::ReleaseControl,
             0x05 => Message::Pair(parse(&payload)?),
+            0x07 => Message::Device(parse(&payload)?),
+            0x08 => Message::Forget,
+            0x2a => Message::Forgotten,
             0x10 => Message::Ping,
             0x11 => {
                 let b: [u8; 8] = payload.as_slice().try_into().map_err(|_| "pong needs 8 bytes".to_string())?;

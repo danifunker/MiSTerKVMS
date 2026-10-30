@@ -8,6 +8,7 @@ struct AppSettingsView: View {
     @State private var name = ""
     @State private var demo = false
     @State private var stamp = true
+    @State private var encryption = "auto"
 
     var body: some View {
         NavigationStack {
@@ -19,6 +20,17 @@ struct AppSettingsView: View {
                     Text("This \(Device.kind)'s name")
                 } footer: {
                     Text("Capture PCs list this \(Device.kind) by this name under their paired devices, and other viewers see it when you have control (“\(name.isEmpty ? Device.kind : name) has control”). A change shows on the capture PC the next time this \(Device.kind) connects.")
+                }
+                Section {
+                    Picker("Encryption at home", selection: $encryption) {
+                        Text("When the capture PC can").tag("auto")
+                        Text("Always").tag("require")
+                        Text("Off").tag("off")
+                    }
+                } footer: {
+                    Text(encryption == "off"
+                         ? "On your home network this \(Device.kind) connects without encryption (paired MiSTers still use their key). Away from home connections are always encrypted."
+                         : "Connections to capture PCs on your home network are encrypted, and this \(Device.kind) remembers each capture PC's identity the first time, so another computer can't answer in its place. \(encryption == "require" ? "Capture PCs need MiSTerKVMS Capture 1.0.26 or later." : "Older capture PCs connect without encryption.")")
                 }
                 Section {
                     Toggle("Demo mode", isOn: $demo)
@@ -57,6 +69,7 @@ struct AppSettingsView: View {
                         model.deviceName = name
                         if demo != model.demoMode { model.demoMode = demo }
                         if stamp != model.screenshotStamp { model.screenshotStamp = stamp }
+                        if encryption != model.homeEncryption { model.homeEncryption = encryption }
                         dismiss()
                     }
                 }
@@ -65,6 +78,7 @@ struct AppSettingsView: View {
                 name = model.deviceNameIsDefault ? "" : model.deviceName
                 demo = model.demoMode
                 stamp = model.screenshotStamp
+                encryption = model.homeEncryption
             }
         }
     }

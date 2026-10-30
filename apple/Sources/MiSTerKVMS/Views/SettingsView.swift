@@ -34,6 +34,17 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
+                Picker("Encrypt capture server streams", selection: $controller.homeEncryption) {
+                    Text("When the capture PC can").tag("auto")
+                    Text("Always").tag("require")
+                    Text("Off").tag("off")
+                }
+                Text(controller.homeEncryption == "off"
+                     ? "Streams on your home network arrive without encryption."
+                     : "Streams on your home network are encrypted, and this Mac remembers each capture PC's identity the first time, so another computer can't answer in its place. \(controller.homeEncryption == "require" ? "Capture PCs need MiSTerKVMS Capture 1.0.26 or later." : "Older capture PCs connect without encryption.")")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle("Put the core and time under screenshots", isOn: $controller.screenshotStamp)
                 Text("Copy Screenshot (⇧⌘C) and Save Screenshot (⇧⌘S) add a bar under the picture saying which core was running and when. Saved screenshots go to Pictures/MiSTerKVMS.")
                     .font(.caption).foregroundStyle(.secondary)
