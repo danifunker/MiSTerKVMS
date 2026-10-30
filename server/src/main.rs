@@ -94,6 +94,8 @@ pub struct Server {
     pub devices: devices::Devices,
     /// This capture PC's permanent id (config::server_id).
     pub id: String,
+    /// Its key pair for encrypted connections (config::server_identity).
+    pub identity: mkvm::secure::ServerIdentity,
 }
 
 impl Server {
@@ -234,6 +236,7 @@ pub fn serve(dir: PathBuf, as_service: bool) -> Result<(), String> {
         discovery: Mutex::new(discovery::Discovery::start().map_err(|e| log(&format!("mDNS: {e}"))).ok()),
         devices: devices::Devices::load(&dir),
         id: config::server_id(&dir),
+        identity: config::server_identity(&dir),
     });
     let patience = Instant::now() + Duration::from_secs(if as_service { 45 } else { 0 });
     retry(patience, || net::listen(server.clone(), settings.port).map_err(|e| format!("can't listen on TCP {}: {e}", settings.port)))?;

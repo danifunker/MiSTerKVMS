@@ -171,6 +171,40 @@ pub fn server_id(dir: &Path) -> String {
     id
 }
 
+/// This capture PC's identity for encrypted connections (made once, kept in
+/// `server-key` in the config folder, readable only by the server's user
+/// where the OS allows). Viewers remember its public half per host and
+/// notice if another computer answers in its place.
+pub fn server_identity(dir: &Path) -> mkvm::secure::ServerIdentity {
+    use mkvm::secure::ServerIdentity;
+    let path = dir.join("server-key");
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        let mut lines = text.lines();
+        if let (Some(private), Some(public)) = (lines.next(), lines.next()) {
+            if let Some(identity) = ServerIdentity::from_hex(private, public) {
+                return identity;
+            }
+        }
+        crate::log(&format!("config: {} is damaged: making a new identity (viewers will see it changed)", path.display()));
+    }
+    let identity = ServerIdentity::generate().expect("the OS has randomness");
+    let write = || -> std::io::Result<()> {
+        std::fs::create_dir_all(dir)?;
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, format!("{}\n{}\n", identity.private_hex(), identity.public_hex()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+        }
+        std::fs::rename(tmp, &path)
+    };
+    if let Err(e) = write() {
+        crate::log(&format!("config: can't save {}: {e}", path.display()));
+    }
+    identity
+}
+
 pub fn save_streams(dir: &Path, streams: &Streams) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let tmp = dir.join("capture.json.tmp");

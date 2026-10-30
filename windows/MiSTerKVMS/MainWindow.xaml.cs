@@ -48,6 +48,7 @@ public sealed partial class MainWindow : Window
         // whatever the setting.
         if (Environment.GetCommandLineArgs().Contains("--auto-capture")) _core.Call("forceAutoCapture");
         AutoCaptureButton.IsChecked = _core.Call<bool>("autoCapture");
+        BuildEncryptionMenu();
         BuildReleaseKeysMenu();
         _core.Call("setHostPreviews", new { on = true });
         HostList.SizeChanged += (_, _) => SizePictures();
@@ -717,6 +718,34 @@ public sealed partial class MainWindow : Window
 
     private void Stamp_Click(object sender, RoutedEventArgs e) =>
         _core.Call("setScreenshotStamp", new { on = StampButton.IsChecked == true });
+
+    // MARK: Encryption
+
+    /// <summary>The … menu's Encrypt capture server streams: when the capture
+    /// PC can, always, or off (on the home network; from the internet they
+    /// always are).</summary>
+    private void BuildEncryptionMenu()
+    {
+        string current = _core.Call<string>("homeEncryption");
+        var menu = new MenuFlyout();
+        foreach (var (mode, text, tip) in new[]
+        {
+            ("auto", "When the capture PC can", "Encrypted, and the capture PC's identity remembered; older capture PCs connect without encryption."),
+            ("require", "Always", "Encrypted or not at all: capture PCs need MiSTerKVMS Capture 1.0.26 or later."),
+            ("off", "Off", "Streams on your home network arrive without encryption."),
+        })
+        {
+            var item = new RadioMenuFlyoutItem { Text = text, GroupName = "encryption", IsChecked = mode == current, Tag = mode };
+            ToolTipService.SetToolTip(item, tip);
+            item.Click += (_, _) =>
+            {
+                _core.Call("setHomeEncryption", new { mode = (string)item.Tag });
+                BuildEncryptionMenu();
+            };
+            menu.Items.Add(item);
+        }
+        EncryptionButton.Flyout = menu;
+    }
 
     // MARK: Release keys
 

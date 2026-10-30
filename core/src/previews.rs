@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use kvms_codec::{jpeg, scale, Bgra};
 use mkvm::{Audio, StreamAddress, Video};
 
-use crate::link::{LinkMedia, MkvmLink, Remote};
+use crate::link::{LinkMedia, MkvmLink, Remote, Security};
 use crate::session::ConnectionState;
 use crate::video::crop;
 
@@ -217,8 +217,8 @@ impl LinkMedia for FirstPicture {
 
 /// Connect to a stream as a viewer, take one small picture and what the
 /// MiSTer is running, and leave. Blocks up to PEEK_TIMEOUT.
-pub(crate) fn peek(address: StreamAddress, viewer: String, remote: Option<Remote>) -> Peek {
-    let link = MkvmLink::connect_with(address, viewer, remote);
+pub(crate) fn peek(address: StreamAddress, viewer: String, remote: Option<Remote>, security: Security) -> Peek {
+    let link = MkvmLink::connect_with(address, viewer, remote, security);
     link.set_limits(Some(MAX_W), Some(MAX_H), Some(2.0), Some(QUALITY));
     let media = Arc::new(FirstPicture::default());
     link.set_media(Some(media.clone()));
@@ -333,7 +333,7 @@ mod tests {
             }
         });
         let address = StreamAddress::parse(&format!("mkvm://127.0.0.1:{port}/MiSTer")).unwrap();
-        let found = peek(address, "Test (preview)".into(), None);
+        let found = peek(address, "Test (preview)".into(), None, Security::new(crate::link::Encryption::Off));
         assert_eq!(found.caption, "SNES");
         let (_, w, h) = found.picture.expect("a picture");
         assert_eq!((w, h), (MAX_W, MAX_H));
@@ -347,7 +347,7 @@ mod tests {
         // Port 9: nothing listens.
         let address = StreamAddress::parse("mkvm://127.0.0.1:9/MiSTer").unwrap();
         let t = Instant::now();
-        let found = peek(address, "Test (preview)".into(), None);
+        let found = peek(address, "Test (preview)".into(), None, Security::new(crate::link::Encryption::Off));
         assert_eq!(found.caption, "Offline");
         assert!(found.picture.is_none());
         assert!(t.elapsed() < PEEK_TIMEOUT);

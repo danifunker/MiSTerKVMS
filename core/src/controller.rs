@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use crate::input::{KeyResult, MouseButton, ReleaseChord};
 use crate::keymap::hid;
-use crate::link::{MkvmLink, StreamState};
+use crate::link::{Encryption, MkvmLink, Security, StreamState};
 use crate::log;
 use crate::previews::{self, HostPreview, Previews};
 use crate::profiles::{HostProfile, ProfileStore, SourceKind};
@@ -340,6 +340,13 @@ impl Controller {
             profile.cursor_lag_ms = before.cursor_lag_ms;
             profile.cursor_gain = before.cursor_gain;
             profile.reset_learned_if_mouse_changed(&before);
+            // Another capture PC (or another way to it): learn its identity anew.
+            let host = |p: &HostProfile| mkvm::StreamAddress::parse(&p.stream).map(|a| a.socket()).ok();
+            if host(&before) != host(&profile) {
+                self.inner.store.change(|d| {
+                    d.server_keys.remove(&profile.id);
+                });
+            }
         }
         self.inner.store.upsert(profile.clone());
         self.inner.notify(ControllerEvent::ProfilesChanged);
@@ -350,11 +357,22 @@ impl Controller {
         }
     }
 
+    /// Delete a host. If it was the last one using this device's key for its
+    /// capture PC, the capture PC is told to forget this device (in the
+    /// background; see `stop_internet`).
     pub fn delete_profile(&self, id: String) {
         if self.open_profile_id().as_deref() == Some(id.as_str()) {
             self.close();
         }
+        if let Some(profile) = self.inner.store.get(&id) {
+            if profile.use_internet {
+                self.inner.release_key(&profile);
+            }
+        }
         self.inner.store.delete(&id);
+        self.inner.store.change(|d| {
+            d.server_keys.remove(&id);
+        });
         self.inner.notify(ControllerEvent::ProfilesChanged);
     }
 
@@ -642,6 +660,31 @@ impl Controller {
 
     /// How this computer appears to other viewers (the computer's name
     /// unless set).
+    /// Encryption with capture servers on the home network: "auto" (when
+    /// the capture PC can), "require" or "off". Android always requires it.
+    pub fn home_encryption(&self) -> String {
+        self.inner.encryption().as_str().into()
+    }
+
+    /// Set it ("auto", "require" or "off"). Open hosts reconnect. Ignored
+    /// where it can't be changed (`home_encryption_locked`).
+    pub fn set_home_encryption(&self, mode: String) {
+        if self.home_encryption_locked() || Encryption::parse(&mode).is_none() {
+            return;
+        }
+        self.inner.store.change(|d| d.home_encryption = mode.clone());
+        if let Some(id) = self.open_profile_id() {
+            self.reopen_if_open(&id);
+        }
+        self.inner.notify(ControllerEvent::Changed);
+    }
+
+    /// The setting can't be changed here (Android: always encrypted, as its
+    /// store listing says).
+    pub fn home_encryption_locked(&self) -> bool {
+        cfg!(target_os = "android")
+    }
+
     pub fn viewer_name(&self) -> String {
         let name = self.inner.store.data().viewer_name;
         if name.trim().is_empty() {
@@ -690,7 +733,7 @@ impl Controller {
         // stream added with the internet switch on has never connected).
         let mut server = key_server(&profile);
         if profile.server_id.is_empty() {
-            if let Ok(found) = crate::link::server_id(&address, &device_name) {
+            if let Ok(found) = crate::link::server_id(&address, &device_name, &self.inner.security_for(&profile)) {
                 if !found.is_empty() {
                     server = found;
                 }
@@ -700,7 +743,8 @@ impl Controller {
         let (key, server_address, reused) = match existing {
             Some(key) if !again => (key, String::new(), true),
             existing => {
-                let paired = crate::link::pair(&address, &device_name, existing.map(|k| k.id_hex())).map_err(failed)?;
+                let paired = crate::link::pair(&address, &device_name, existing.map(|k| k.id_hex()), &self.inner.security_for(&profile))
+                    .map_err(failed)?;
                 let key = mkvm::secure::DeviceKey::from_hex(&paired.key_id, &paired.key)
                     .ok_or_else(|| failed("the server sent a malformed key".into()))?;
                 if !paired.server_id.is_empty() {
@@ -757,16 +801,13 @@ impl Controller {
 
     /// Stop using a host over the internet. Returns whether the key is still
     /// needed (another stream of the same capture PC uses it); if not, it's
-    /// forgotten here and the shell should delete its copy. (The server keeps
-    /// it until revoked on its setup page.)
+    /// forgotten here, the shell should delete its copy, and the capture PC
+    /// is told to forget this device, in the background (if it can't be
+    /// reached, or is older than that, its setup page still lists it).
     pub fn stop_internet(&self, id: String) -> bool {
         let Some(profile) = self.inner.store.get(&id) else { return false };
-        let server = key_server(&profile);
+        let still_needed = !self.inner.release_key(&profile);
         self.inner.store.update(&id, |p| p.use_internet = false);
-        let still_needed = self.inner.store.data().profiles.iter().any(|p| p.id != id && p.use_internet && key_server(p) == server);
-        if !still_needed {
-            self.inner.device_keys.lock().unwrap().remove(&server);
-        }
         self.reopen_if_open(&id);
         self.inner.notify(ControllerEvent::ProfilesChanged);
         still_needed
@@ -1335,6 +1376,53 @@ impl Inner {
         self.observer.on_event(event);
     }
 
+    fn encryption(&self) -> Encryption {
+        if cfg!(target_os = "android") {
+            return Encryption::Require;
+        }
+        Encryption::parse(&self.store.data().home_encryption).unwrap_or(Encryption::Auto)
+    }
+
+    /// How a host's connections are encrypted, and the capture PC identity
+    /// it remembers (learned on the first encrypted connection).
+    fn security_for(&self, profile: &HostProfile) -> Security {
+        let pinned = self.store.data().server_keys.get(&profile.id).and_then(|k| mkvm::secure::unhex(k));
+        let me = self.me.clone();
+        let id = profile.id.clone();
+        let learned = Arc::new(move |key: [u8; mkvm::secure::PUBLIC_KEY_LEN]| {
+            if let Some(inner) = me.upgrade() {
+                // Only for hosts still there (a preview can outlive a delete).
+                if inner.store.get(&id).is_some() {
+                    inner.store.change(|d| {
+                        d.server_keys.insert(id.clone(), mkvm::secure::hex(&key));
+                    });
+                }
+            }
+        });
+        Security { mode: self.encryption(), pinned, learned: Some(learned) }
+    }
+
+    /// `profile` stops using this device's key for its capture PC. If no other
+    /// host of that PC uses it, the key is dropped here and the PC is told
+    /// to forget this device, in the background. Returns whether it was.
+    fn release_key(&self, profile: &HostProfile) -> bool {
+        let server = key_server(profile);
+        let still_needed = self.store.data().profiles.iter().any(|p| p.id != profile.id && p.use_internet && key_server(p) == server);
+        if still_needed {
+            return false;
+        }
+        let Some(key) = self.device_keys.lock().unwrap().remove(&server) else { return true };
+        let Ok(home) = mkvm::StreamAddress::parse(&profile.stream) else { return true };
+        let internet = self.remote_for(profile, &home).and_then(|r| r.internet);
+        let security = self.security_for(profile);
+        let name = profile.name.clone();
+        thread::spawn(move || match crate::link::forget(&home, internet.as_ref(), &security, &key) {
+            Ok(()) => log(&format!("host: '{name}': the capture PC forgot this device")),
+            Err(e) => log(&format!("host: '{name}': couldn't tell the capture PC to forget this device ({e}); its setup page still lists it")),
+        });
+        true
+    }
+
     fn capture_automatically(&self) -> bool {
         self.auto_capture_forced.load(Ordering::Relaxed) || self.store.data().auto_capture
     }
@@ -1552,7 +1640,7 @@ impl Inner {
         match mkvm::StreamAddress::parse(&profile.stream) {
             Ok(address) => {
                 let remote = self.remote_for(profile, &address);
-                let link = MkvmLink::connect_with(address, viewer, remote);
+                let link = MkvmLink::connect_with(address, viewer, remote, self.security_for(profile));
                 s.limits.apply(&link, profile);
                 let session = MisterSession::with_link(link.clone(), observer);
                 session.set_settings(profile.input_settings());
@@ -1642,9 +1730,10 @@ impl Inner {
             return;
         };
         let remote = self.remote_for(&profile, &address);
+        let security = self.security_for(&profile);
         let viewer = format!("{} (preview)", self.viewer_name());
         thread::spawn(move || {
-            let found = previews::peek(address, viewer, remote);
+            let found = previews::peek(address, viewer, remote, security);
             if let Some(name) = &found.stream_name {
                 inner.follow_server_name(&id, name);
             }
@@ -2044,6 +2133,8 @@ mod tests {
 
         let (c, events) = controller();
         c.set_auto_capture(true);
+        // The fake server speaks plain mkvm and takes one connection.
+        c.set_home_encryption("off".into());
         let p = HostProfile { stream: format!("mkvm://127.0.0.1:{port}/MiSTer%20SS1"), ..Default::default() };
         c.save_profile(p.clone());
         c.open(p.id);

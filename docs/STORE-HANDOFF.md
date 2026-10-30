@@ -66,10 +66,23 @@ the capture server's API on this PC (`curl http://127.0.0.1:5971/api/remote`,
 2. **App content** (Play Console → Policy and programs → App content), one
    form at a time:
    - Privacy policy: the URL above.
-   - **Data safety:** check Google's current definition of "collected"
-     first (the device's name and input leave the phone, but only to the
-     user's own capture PC; nothing reaches the developer), then answer;
-     the policy says the apps collect nothing.
+   - **Data safety** (redo after the release with encryption, 1.0.26+;
+     reasoning in "Data safety answers" below):
+     - Collects data: **Yes**. Shared: **No**.
+     - Device or other IDs: the device name (and, when paired, the key id
+       the capture PC issued). Collected, not shared, required, for app
+       functionality. Not processed ephemerally (the capture PC lists paired
+       devices and logs names).
+     - App activity, other user-generated content (keys, clicks, typed
+       text): collected, **processed ephemerally**, required, app
+       functionality. Not shown on the listing.
+     - Encrypted in transit: **Yes** (Android requires it, IPHONE.md §3.1).
+     - Users can request deletion: **Yes** (in the app, and the setup page;
+       PRIVACY.md "Removing a device").
+   - **Store listing line** for the device name, e.g.: "MiSTerKVMS sends
+     your phone's name to your own MiSTerKVMS Capture computer, which shows
+     it to others watching the same MiSTer ("Pixel has control") and lists
+     it under paired devices. Nothing is sent to the developer."
    - Ads: none. App access: everything works without an account; reviewers
      use demo mode ("Try it without a MiSTer" on first launch). Content
      rating questionnaire (expect Everyone). Target audience: not children
@@ -119,3 +132,16 @@ upload on real devices: read the one for `48 (1.0.16)`.
 - The debug build takes ~5 s to show its first screen on the emulator (an
   unoptimised Compose build); check the release build's cold start on a
   fresh emulator boot.
+
+## Data safety answers (Google Play)
+
+Google counts as "collected" anything the app sends off the device, whoever
+receives it, so the device name and the input count, though they go only to
+the user's own capture PC. Passed straight on (input) is still declared,
+marked processed ephemerally, and then not shown on the listing. The
+end-to-end exemption doesn't fit: the capture PC decrypts and acts on the
+data. "Encrypted in transit" may be claimed only if it covers all such data,
+hence Android's fixed "require" (no plain fallback, the key id inside the
+encryption). Deletion: there is no prescribed mechanism, only that it be easy
+to find; the app removes its own pairing, and PRIVACY.md and the app point
+to the setup page for the others.

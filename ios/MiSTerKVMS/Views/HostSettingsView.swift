@@ -50,7 +50,7 @@ struct HostSettingsView: View {
                         Text("Over the internet")
                     } footer: {
                         Text(profile.useInternet
-                             ? "Away from home the app connects to this address (your home's public address or dynamic-DNS name, and the port forwarded to the capture PC). At home it connects directly. Pair again if the capture PC revoked this \(Device.kind)."
+                             ? "Away from home the app connects to this address (your home's public address or dynamic-DNS name, and the port forwarded to the capture PC). At home it connects directly. Pair again if the capture PC revoked this \(Device.kind).\n\nTurning this off (or deleting this MiSTer) also removes this \(Device.kind) from the capture PC. To see the other devices paired with it and remove them, open http://localhost:5971 on the capture PC."
                              : "Lets this \(Device.kind) connect from anywhere, encrypted. It pairs with the capture PC while you're on the same Wi-Fi (once per capture PC: its other MiSTers use the same key). First turn on “Allow connections from the internet” on the capture PC's setup page.")
                     }
                 }

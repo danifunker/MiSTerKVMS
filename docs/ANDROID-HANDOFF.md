@@ -171,7 +171,7 @@ dashboard shows an "Apply for production access" checklist, it applies.
 6. **Closed testing** (only if required): 12+ testers opted in for 14
    continuous days, then apply for production access. Start early.
 7. **App content:** privacy policy (`docs/PRIVACY.md`, shared with iOS: it doesn't exist yet, APP-STORE.md S3; write it if it's still missing),
-   Data safety (nothing collected or shared), Ads (none), content rating
+   Data safety (answers in STORE-HANDOFF.md), Ads (none), content rating
    questionnaire, target audience (not children), App access (reviewers use
    demo mode: "Try it without a MiSTer").
 8. **Store listing:** short description (80 chars), full description
