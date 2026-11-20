@@ -161,7 +161,7 @@ struct SessionView: View {
                 Button { controller.saveScreenshot() } label: {
                     Label("Save Screenshot", systemImage: "photo.badge.arrow.down")
                 }
-                .help("Save the picture to Pictures/MiSTerKVMS (⇧⌘S)")
+                .help(Self.saveScreenshotHelp)
                 .disabled(!controller.canScreenshot)
 
                 Button { controller.toggleRecording() } label: {
@@ -169,7 +169,7 @@ struct SessionView: View {
                           systemImage: controller.isRecording ? "stop.circle.fill" : "record.circle")
                 }
                 .foregroundStyle(controller.isRecording ? .red : .primary)
-                .help(controller.isRecording ? "Stop recording (⌘⇧R)" : "Record video and audio to Movies/MiSTerKVMS (⌘⇧R)")
+                .help(controller.isRecording ? "Stop recording (⌘⇧R)" : Self.recordHelp)
                 .disabled(!controller.isRecording && controller.videoStats?.state != "connected")
 
                 Toggle(isOn: $controller.muted) {
@@ -193,6 +193,14 @@ extension SessionView {
     private func setDisplay(_ change: (inout DisplaySettings) -> Void) {
         controller.updateDisplay(change)
     }
+
+    #if APP_STORE
+    static let saveScreenshotHelp = "Save the picture… (⇧⌘S)"
+    static let recordHelp = "Record video and audio… (⌘⇧R)"
+    #else
+    static let saveScreenshotHelp = "Save the picture to Pictures/MiSTerKVMS (⇧⌘S)"
+    static let recordHelp = "Record video and audio to Movies/MiSTerKVMS (⌘⇧R)"
+    #endif
 }
 
 private struct VideoPlaceholder: View {

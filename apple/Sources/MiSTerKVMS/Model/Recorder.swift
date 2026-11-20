@@ -35,8 +35,9 @@ final class Recorder: MediaSink, @unchecked Sendable {
         self.baseURL = baseURL
     }
 
-    static func defaultURL(hostName: String) -> URL {
-        let movies = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
+    /// A new recording's name in `folder` (Movies/MiSTerKVMS when nil).
+    static func defaultURL(hostName: String, in folder: URL? = nil) -> URL {
+        let movies = folder ?? FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MiSTerKVMS", isDirectory: true)
         try? FileManager.default.createDirectory(at: movies, withIntermediateDirectories: true)
         let stamp = Date().formatted(.verbatim(

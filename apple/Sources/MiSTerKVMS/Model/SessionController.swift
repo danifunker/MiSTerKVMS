@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import QuartzCore
+import UniformTypeIdentifiers
 #if canImport(KVMSCore)
 import KVMSCore
 #endif
@@ -304,7 +305,25 @@ final class SessionController: ObservableObject {
 
     func startRecording() {
         guard !isRecording, let profile else { return }
+        #if APP_STORE
+        // Sandboxed: the app may only write where the user points it, so
+        // ask with the standard panel. A folder, not a file: if the picture
+        // size changes mid-recording the next part goes beside the first.
+        if capturing { stopCapture() }
+        let panel = NSOpenPanel()
+        panel.title = "Record Video and Audio"
+        panel.message = "Choose a folder for the recording."
+        panel.prompt = "Record"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        let recorder = Recorder(baseURL: Recorder.defaultURL(hostName: profile.name, in: folder))
+        #else
         let recorder = Recorder(baseURL: Recorder.defaultURL(hostName: profile.name))
+        #endif
         recorder.onFinished = { [weak self] result in
             switch result {
             case .success(let url):
@@ -373,19 +392,55 @@ final class SessionController: ObservableObject {
         }
     }
 
-    /// The picture as it is now, into Pictures/MiSTerKVMS.
+    /// The last screenshot saved (App Store build, which asks where).
+    @Published private(set) var lastScreenshot: URL?
+
+    /// The picture as it is now: into Pictures/MiSTerKVMS, or (App Store
+    /// build, sandboxed) wherever the standard Save panel says.
     func saveScreenshot() {
+        #if APP_STORE
+        let shot: Screenshot
+        do {
+            // Taken before the panel opens: the picture from the moment asked.
+            shot = try core.screenshot(takenAt: Self.screenshotTime())
+        } catch {
+            showNotice("No screenshot: \(Self.message(error))")
+            return
+        }
+        if capturing { stopCapture() }
+        let panel = NSSavePanel()
+        panel.title = "Save Screenshot"
+        panel.nameFieldStringValue = shot.fileName
+        panel.allowedContentTypes = [.png]
+        panel.canCreateDirectories = true
+        panel.directoryURL = lastScreenshot?.deletingLastPathComponent()
+            ?? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try shot.png.write(to: url, options: .atomic)
+            lastScreenshot = url
+            showNotice("Saved \(url.lastPathComponent)")
+        } catch {
+            showNotice("Not saved: \(error.localizedDescription)")
+        }
+        #else
         do {
             let path = try core.saveScreenshot(takenAt: Self.screenshotTime(), folder: Self.screenshotFolder.path)
             showNotice("Saved \(URL(fileURLWithPath: path).lastPathComponent)")
         } catch {
             showNotice("Not saved: \(Self.message(error))")
         }
+        #endif
     }
 
     func showScreenshots() {
+        #if APP_STORE
+        guard let lastScreenshot else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([lastScreenshot])
+        #else
         try? FileManager.default.createDirectory(at: Self.screenshotFolder, withIntermediateDirectories: true)
         NSWorkspace.shared.open(Self.screenshotFolder)
+        #endif
     }
 
     private func showNotice(_ text: String) {

@@ -15,11 +15,10 @@
 	<true/>
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
-	<!-- Recordings go to Movies/MiSTerKVMS. -->
-	<key>com.apple.security.assets.movies.read-write</key>
-	<true/>
-	<!-- Saved screenshots go to Pictures/MiSTerKVMS. -->
-	<key>com.apple.security.assets.pictures.read-write</key>
+	<!-- Screenshots and recordings go only where the user picks in the
+	     standard Save / Open panel (SessionController.swift); no standing
+	     access to Movies or Pictures. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
 </dict>
 </plist>

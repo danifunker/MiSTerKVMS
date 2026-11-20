@@ -41,7 +41,7 @@ struct MiSTerKVMSApp: App {
                 Button("Type Text…") { controller.typingText = true }
                     .keyboardShortcut("v", modifiers: [.command, .shift])
                     .disabled(!controller.isConnected)
-                Button(controller.isRecording ? "Stop Recording" : "Start Recording") { controller.toggleRecording() }
+                Button(controller.isRecording ? "Stop Recording" : Self.startRecordingTitle) { controller.toggleRecording() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(!controller.isRecording && controller.videoStats?.state != "connected")
                 Button("Show Last Recording in Finder") { controller.showLastRecording() }
@@ -50,10 +50,18 @@ struct MiSTerKVMSApp: App {
                 Button("Copy Screenshot") { controller.copyScreenshot() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
                     .disabled(!controller.canScreenshot)
+                #if APP_STORE
+                Button("Save Screenshot…") { controller.saveScreenshot() }
+                    .keyboardShortcut("s", modifiers: [.command, .shift])
+                    .disabled(!controller.canScreenshot)
+                Button("Show Last Screenshot in Finder") { controller.showScreenshots() }
+                    .disabled(controller.lastScreenshot == nil)
+                #else
                 Button("Save Screenshot") { controller.saveScreenshot() }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
                     .disabled(!controller.canScreenshot)
                 Button("Show Screenshots in Finder") { controller.showScreenshots() }
+                #endif
                 Divider()
                 Button("Zoom In") { controller.zoom(by: 1.25) }
                     .keyboardShortcut("+", modifiers: .command)
@@ -98,6 +106,12 @@ struct MiSTerKVMSApp: App {
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
     }
+
+    #if APP_STORE
+    private static let startRecordingTitle = "Start Recording…"
+    #else
+    private static let startRecordingTitle = "Start Recording"
+    #endif
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {

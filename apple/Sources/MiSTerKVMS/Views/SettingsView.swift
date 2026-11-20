@@ -35,7 +35,7 @@ struct SettingsView: View {
             }
             Section {
                 Toggle("Put the core and time under screenshots", isOn: $controller.screenshotStamp)
-                Text("Copy Screenshot (⇧⌘C) and Save Screenshot (⇧⌘S) add a bar under the picture saying which core was running and when. Saved screenshots go to Pictures/MiSTerKVMS.")
+                Text("Copy Screenshot (⇧⌘C) and Save Screenshot (⇧⌘S) add a bar under the picture saying which core was running and when.\(Self.screenshotsGo)")
                     .font(.caption).foregroundStyle(.secondary)
             }
             #if !APP_STORE
@@ -47,4 +47,10 @@ struct SettingsView: View {
         .onAppear { viewerName = controller.viewerName }
         .onDisappear { controller.viewerName = viewerName }
     }
+
+    #if APP_STORE
+    private static let screenshotsGo = " Save Screenshot asks where to put it."
+    #else
+    private static let screenshotsGo = " Saved screenshots go to Pictures/MiSTerKVMS."
+    #endif
 }

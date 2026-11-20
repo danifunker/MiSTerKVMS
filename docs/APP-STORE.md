@@ -103,8 +103,8 @@ viewer name replaced by placeholders (`mkvm://capture-pc/`, `192.168.1.50`,
 > - Click the picture and the keyboard and mouse go to the MiSTer; press
 >   Right ⌘ + Right ⌥ to get them back. F12 opens the MiSTer menu.
 > - Fit, fill or integer scaling, zoom, and MiSTer's black borders cropped.
-> - Screenshots (copied or saved) and recordings with sound, to Pictures
->   and Movies.
+> - Screenshots (copied or saved) and recordings with sound, saved where
+>   you choose.
 > - Several MiSTers in the sidebar, each with its picture and the core it's
 >   running.
 > - Finds MiSTerKVMS Capture on your network on its own, or uses a capture
