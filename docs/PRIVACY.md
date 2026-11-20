@@ -1,6 +1,6 @@
 # MiSTerKVMS privacy policy
 
-Effective 30 October 2026.
+Effective 20 November 2026.
 
 This policy covers the MiSTerKVMS apps distributed through app stores: the
 iPhone app, the Mac App Store app and the Android app. They're free, open
@@ -95,8 +95,8 @@ of your device's own screen, and both happen only when you press the
 button.
 
 - **Mac App Store app:** Record saves a video with sound, as an MP4 file in
-  Movies/MiSTerKVMS. Screenshots are copied to the clipboard or saved as PNG
-  files in Pictures.
+  a folder you choose. Screenshots are copied to the clipboard or saved as PNG
+  files where you choose in the Save panel.
 - **iPhone and Android:** there's no recording. The screenshot button copies
   the picture to the clipboard; on Android the app keeps that picture in
   its cache, so that other apps can paste it.
@@ -114,10 +114,17 @@ The files are yours: they stay on your device unless you share them.
   iCloud Keychain or restored onto another iPhone. On Android they're
   encrypted with a key held in the Android Keystore, and the app's data
   isn't backed up or moved to another device.
-- Recordings and screenshots you saved on the Mac.
+- Recordings and screenshots you saved on the Mac, where you chose.
+- On the Mac, a log file of what the app did (connections, your MiSTers'
+  names and addresses, errors), so problems can be looked into. It never
+  holds what you typed or did on the MiSTer, stays on the Mac and is sent
+  nowhere; it starts over once it passes 5 MB.
 
-Deleting the app deletes all of these, except recordings and screenshots
-you saved on the Mac.
+On iPhone and Android, deleting the app deletes all of these. On the Mac,
+macOS keeps an App Store app's data after the app is deleted: to remove it
+too, delete the folder com.danifunker.misterkvms in your Library's
+Containers folder (in Finder, Go → Go to Folder, ~/Library/Containers).
+Recordings and screenshots you saved stay wherever you put them.
 
 ## Permissions
 
@@ -130,8 +137,8 @@ you saved on the Mac.
 - **Mac App Store app:** network access; the camera and microphone, which
   macOS asks for only if you use a capture card plugged into the Mac (macOS
   treats the card as a camera and microphone; its picture and sound are
-  shown and played on the Mac and go nowhere else); and the Movies and
-  Pictures folders, for recordings and screenshots.
+  shown and played on the Mac and go nowhere else); and the files and
+  folders you pick in a Save or Open panel, for recordings and screenshots.
 
 ## Clipboard
 
