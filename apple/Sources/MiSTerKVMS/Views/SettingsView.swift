@@ -5,6 +5,9 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var controller: SessionController
     @State private var viewerName = ""
+    #if APP_STORE
+    @ObservedObject private var saveFolders = SaveFolders.shared
+    #endif
 
     var body: some View {
         Form {
@@ -38,6 +41,28 @@ struct SettingsView: View {
                 Text("Copy Screenshot (⇧⌘C) and Save Screenshot (⇧⌘S) add a bar under the picture saying which core was running and when.\(Self.screenshotsGo)")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            #if APP_STORE
+            Section("Saving") {
+                ForEach(SaveFolders.Kind.allCases, id: \.self) { kind in
+                    LabeledContent(kind.title) {
+                        HStack {
+                            if saveFolders.missing.contains(kind) {
+                                Text("Folder not found, asks").foregroundStyle(.secondary)
+                            } else {
+                                Text(saveFolders.displayName(kind) ?? "Ask each time")
+                                    .foregroundStyle(.secondary)
+                            }
+                            Button("Choose…") { saveFolders.choose(kind) }
+                            if saveFolders.folders[kind] != nil || saveFolders.missing.contains(kind) {
+                                Button("Ask Each Time") { saveFolders.reset(kind) }
+                            }
+                        }
+                    }
+                }
+                Text("With a folder chosen, Save Screenshot (⇧⌘S) and Record (⇧⌘R) save there straight away. Without one, they ask where, and can remember the folder you pick.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            #endif
             #if !APP_STORE
             CaptureServerSettings()
             #endif
@@ -49,7 +74,7 @@ struct SettingsView: View {
     }
 
     #if APP_STORE
-    private static let screenshotsGo = " Save Screenshot asks where to put it."
+    private static let screenshotsGo = " Where they're saved is under Saving, below."
     #else
     private static let screenshotsGo = " Saved screenshots go to Pictures/MiSTerKVMS."
     #endif

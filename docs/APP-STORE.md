@@ -117,7 +117,12 @@ viewer name replaced by placeholders (`mkvm://capture-pc/`, `192.168.1.50`,
 **Review notes (Mac):** as for the iPhone, plus: *the Mac app also offers
 the demo: hold the + button in the sidebar → Add Demo Host, or "Try
 Without a MiSTer" when no hosts are saved. Sandboxed: system shortcuts such
-as ⌘Tab stay with macOS, the rest of the keyboard goes to the MiSTer.*
+as ⌘Tab stay with macOS, the rest of the keyboard goes to the MiSTer.
+Screenshots and recordings are saved to a folder the user picks in the
+standard Open panel (files.user-selected.read-write); Settings → Saving, or
+"Use this folder from now on" in that panel, keeps a security-scoped
+bookmark to it (files.bookmarks.app-scope) so later saves don't ask. No
+access to Movies or Pictures otherwise.*
 
 ## 3b. iPhone and iPad screenshots and preview
 

@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import QuartzCore
-import UniformTypeIdentifiers
 #if canImport(KVMSCore)
 import KVMSCore
 #endif
@@ -306,20 +305,19 @@ final class SessionController: ObservableObject {
     func startRecording() {
         guard !isRecording, let profile else { return }
         #if APP_STORE
-        // Sandboxed: the app may only write where the user points it, so
-        // ask with the standard panel. A folder, not a file: if the picture
-        // size changes mid-recording the next part goes beside the first.
-        if capturing { stopCapture() }
-        let panel = NSOpenPanel()
-        panel.title = "Record Video and Audio"
-        panel.message = "Choose a folder for the recording."
-        panel.prompt = "Record"
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first
-        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        // Sandboxed: the app may only write where the user points it. The
+        // folder from Settings (or "use from now on"), else ask with the
+        // standard panel. A folder, not a file: if the picture size changes
+        // mid-recording the next part goes beside the first.
+        let folder: URL
+        if let saved = SaveFolders.shared.folder(.recordings) {
+            folder = saved
+        } else {
+            if capturing { stopCapture() }
+            guard let picked = SaveFolders.shared.ask(.recordings, title: "Record Video and Audio",
+                                                      prompt: "Record") else { return }
+            folder = picked
+        }
         let recorder = Recorder(baseURL: Recorder.defaultURL(hostName: profile.name, in: folder))
         #else
         let recorder = Recorder(baseURL: Recorder.defaultURL(hostName: profile.name))
@@ -407,17 +405,20 @@ final class SessionController: ObservableObject {
             showNotice("No screenshot: \(Self.message(error))")
             return
         }
-        if capturing { stopCapture() }
-        let panel = NSSavePanel()
-        panel.title = "Save Screenshot"
-        panel.nameFieldStringValue = shot.fileName
-        panel.allowedContentTypes = [.png]
-        panel.canCreateDirectories = true
-        panel.directoryURL = lastScreenshot?.deletingLastPathComponent()
-            ?? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // The folder from Settings (or "use from now on"), else ask with the
+        // standard panel.
+        let folder: URL
+        if let saved = SaveFolders.shared.folder(.screenshots) {
+            folder = saved
+        } else {
+            if capturing { stopCapture() }
+            guard let picked = SaveFolders.shared.ask(.screenshots, title: "Save Screenshot",
+                                                      prompt: "Save") else { return }
+            folder = picked
+        }
+        let url = Self.freeName(shot.fileName, in: folder)
         do {
-            try shot.png.write(to: url, options: .atomic)
+            try shot.png.write(to: url, options: .withoutOverwriting)
             lastScreenshot = url
             showNotice("Saved \(url.lastPathComponent)")
         } catch {
@@ -435,13 +436,33 @@ final class SessionController: ObservableObject {
 
     func showScreenshots() {
         #if APP_STORE
-        guard let lastScreenshot else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([lastScreenshot])
+        if let lastScreenshot, FileManager.default.fileExists(atPath: lastScreenshot.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([lastScreenshot])
+        } else if let folder = SaveFolders.shared.folder(.screenshots) {
+            NSWorkspace.shared.open(folder)
+        }
         #else
         try? FileManager.default.createDirectory(at: Self.screenshotFolder, withIntermediateDirectories: true)
         NSWorkspace.shared.open(Self.screenshotFolder)
         #endif
     }
+
+    #if APP_STORE
+    /// Can Show Screenshots in Finder show anything?
+    var canShowScreenshots: Bool {
+        lastScreenshot != nil || SaveFolders.shared.folders[.screenshots] != nil
+    }
+
+    /// `name` in `folder`, or "name (2).png" etc. if taken (as the core does
+    /// for the DMG app).
+    private static func freeName(_ name: String, in folder: URL) -> URL {
+        let stem = (name as NSString).deletingPathExtension
+        let ext = (name as NSString).pathExtension
+        return (1...).lazy
+            .map { n in folder.appendingPathComponent(n == 1 ? name : "\(stem) (\(n)).\(ext)") }
+            .first { !FileManager.default.fileExists(atPath: $0.path) }!
+    }
+    #endif
 
     private func showNotice(_ text: String) {
         noticeGeneration += 1
