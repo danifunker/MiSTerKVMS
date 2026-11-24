@@ -326,7 +326,11 @@ jobs:
   build-ios:
     needs: version
     if: github.event_name == 'pull_request' || needs.version.outputs.ios_changed == 'true'
-    runs-on: macos-26
+    # Xcode 27 (the iOS 27 SDK), which App Store Connect requires from April
+    # 2027 (ITMS-90725); macos-26 stops at Xcode 26.6. A GitHub preview
+    # image for now (actions/runner-images#14404): back to macos-26 if it
+    # misbehaves, until the deadline.
+    runs-on: xcode-27
     env:
       VERSION: ${{ needs.version.outputs.version }}
       BUILD_NUMBER: ${{ github.run_number }}
