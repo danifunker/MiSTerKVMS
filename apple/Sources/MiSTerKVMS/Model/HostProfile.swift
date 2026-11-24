@@ -89,7 +89,7 @@ extension HostProfile {
     /// The host list's second line.
     var subtitle: String {
         switch sourceKind {
-        case "local": "Capture card on this Mac"
+        case "local": jetkvmAddress.map { "JetKVM \($0)" } ?? "Capture card on this Mac"
         case "demo": "Test pattern; your input is listed on the picture"
         default:
             if !streamName.isEmpty { "Stream \(streamName)" }

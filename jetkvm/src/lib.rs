@@ -376,11 +376,12 @@ impl Connection {
             e => format!("signaling handshake: {e}"),
         })?;
 
-        // Media socket, on the interface that reaches the JetKVM.
-        let probe = UdpSocket::bind("0.0.0.0:0").map_err(|e| e.to_string())?;
-        probe.connect(remote).map_err(|e| e.to_string())?;
-        let local_ip = probe.local_addr().map_err(|e| e.to_string())?.ip();
-        let socket = UdpSocket::bind(SocketAddr::new(local_ip, 0)).map_err(|e| format!("udp bind: {e}"))?;
+        // Media socket: connected, never bound. Connecting picks the local
+        // address (on the interface that reaches the JetKVM) and port, and
+        // the Mac App Store sandbox allows it with outgoing access only; it
+        // refuses bind() without the network-server entitlement.
+        let peer = SocketAddr::new(remote.ip(), 9);
+        let socket = connected_udp(peer).map_err(|e| format!("udp: {e}"))?;
         let local = socket.local_addr().map_err(|e| e.to_string())?;
 
         let mut rtc = Rtc::builder()
@@ -441,6 +442,7 @@ impl Connection {
         let worker = Worker {
             rtc,
             socket,
+            peer,
             local,
             rx,
             shared: shared.clone(),
@@ -618,6 +620,16 @@ impl Drop for Connection {
     }
 }
 
+/// A UDP socket connected to `to` without an explicit bind (see
+/// `Connection::connect`). A connected socket only takes datagrams from its
+/// peer, which is all WebRTC with one JetKVM needs.
+fn connected_udp(to: SocketAddr) -> std::io::Result<UdpSocket> {
+    use socket2::{Domain, Protocol as SockProtocol, Socket, Type};
+    let socket = Socket::new(Domain::for_address(to), Type::DGRAM, Some(SockProtocol::UDP))?;
+    socket.connect(&to.into())?;
+    Ok(socket.into())
+}
+
 /// The mids of an SDP's media sections, in order.
 fn sdp_mids(sdp: &str) -> Vec<String> {
     sdp.lines().filter_map(|l| l.trim_end().strip_prefix("a=mid:")).map(str::to_string).collect()
@@ -714,6 +726,9 @@ fn signal_loop(mut ws: tungstenite::WebSocket<TcpStream>, tx: Sender<Cmd>, stop:
 struct Worker {
     rtc: Rtc,
     socket: UdpSocket,
+    /// Where the socket is connected: the JetKVM's media address once
+    /// WebRTC sends there (re-connected when that changes).
+    peer: SocketAddr,
     local: SocketAddr,
     rx: Receiver<Cmd>,
     shared: Arc<(Mutex<Shared>, Condvar)>,
@@ -799,6 +814,10 @@ impl Worker {
                     }
                 }
                 Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => Input::Timeout(Instant::now()),
+                // A connected UDP socket reports an ICMP "port unreachable"
+                // (a packet before the JetKVM's media port was open) on the
+                // next receive: harmless, ICE retries.
+                Err(e) if e.kind() == ErrorKind::ConnectionRefused => Input::Timeout(Instant::now()),
                 Err(e) => return Err(format!("udp: {e}")),
             };
             self.rtc.handle_input(input).map_err(|e| format!("webrtc: {e}"))?;
@@ -873,7 +892,13 @@ impl Worker {
             match self.rtc.poll_output().map_err(|e| format!("webrtc: {e}"))? {
                 Output::Timeout(t) => return Ok(t),
                 Output::Transmit(t) => {
-                    let _ = self.socket.send_to(&t.contents, t.destination);
+                    if t.destination != self.peer && self.socket.connect(t.destination).is_ok() {
+                        if std::env::var_os("JETKVM_DEBUG").is_some() {
+                            eprintln!("udp: now connected to {} (was {})", t.destination, self.peer);
+                        }
+                        self.peer = t.destination;
+                    }
+                    let _ = self.socket.send(&t.contents);
                 }
                 Output::Event(e) => self.event(e)?,
             }

@@ -225,7 +225,7 @@ private struct VideoPlaceholder: View {
 
     private var title: String {
         switch profile.sourceKind {
-        case "local": "Capture card on this Mac"
+        case "local": profile.jetkvmAddress.map { "JetKVM \($0)" } ?? "Capture card on this Mac"
         case "demo": "Demo"
         default:
             if !profile.streamName.isEmpty { profile.streamName }
@@ -242,8 +242,12 @@ private struct VideoPlaceholder: View {
         case "local":
             if let error = controller.videoError { return error }
             switch state {
-            case nil, "opening", "connecting": return "Opening the capture card…"
-            case "no video": return "The capture card has no picture. Is the MiSTer on?"
+            case nil, "opening", "connecting":
+                return profile.jetkvmAddress == nil ? "Opening the capture card…" : "Connecting to the JetKVM…"
+            case "no video":
+                return profile.jetkvmAddress == nil
+                    ? "The capture card has no picture. Is the MiSTer on?"
+                    : "The JetKVM has no picture. Is the MiSTer on, at 1080p 30 Hz for a JetKVM Mini?"
             case let other?: return other
             }
         default:

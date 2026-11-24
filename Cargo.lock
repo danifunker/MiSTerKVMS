@@ -2223,6 +2223,7 @@ dependencies = [
  "openh264",
  "serde",
  "serde_json",
+ "socket2",
  "str0m",
  "tungstenite",
  "ureq",

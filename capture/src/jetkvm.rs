@@ -44,7 +44,9 @@ impl Reader {
         if address.is_empty() {
             return Err(CaptureError::NotFound("jetkvm:// needs an address".into()));
         }
-        let conn = shared(address).map_err(CaptureError::NotFound)?;
+        // Its own message (not "capture card not found"): no answer, wrong
+        // password, not set up...
+        let conn = shared(address).map_err(|e| CaptureError::Other(format!("JetKVM {address}: {e}")))?;
         // The size comes with the first picture. No picture at all: the
         // JetKVM has no HDMI signal, and wait_frame says what to check.
         let first = conn.wait_frame(0, FIRST_PICTURE).map_err(CaptureError::Other)?;
