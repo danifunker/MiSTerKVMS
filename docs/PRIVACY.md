@@ -38,8 +38,13 @@ keyboard and mouse input. To do that the apps connect to:
   Nothing records, analyses or tracks what you do with your MiSTer.
 - **Your MiSTers** (the Mac App Store app only), through mrext Remote on
   your network, for the same input.
-- **Your local network**, to find capture servers (Bonjour / DNS-SD). This
-  only looks on the network you're on.
+- **Your JetKVM**, if you add one directly: the app logs in to it (with its
+  password, if it has one), receives the MiSTer's picture and sends your
+  keyboard and mouse input to it, which passes them to the MiSTer over USB.
+  Nothing else goes to it.
+- **Your local network**, to find capture servers (Bonjour / DNS-SD) and
+  JetKVMs (by asking each address on your network whether it's a JetKVM).
+  This only looks on the network you're on.
 
 When you turn on **Use over the internet** for a MiSTer (iPhone and
 Android), the app pairs with your capture computer while you're on the
@@ -59,7 +64,10 @@ update it there.
 The first time an app connects to a capture computer it remembers that
 computer's identity, and won't connect if another computer answers in its
 place. The Mac App Store app's direct connection to a MiSTer (mrext Remote)
-isn't encrypted: mrext doesn't offer that, and it stays on your network.
+isn't encrypted: mrext doesn't offer that, and it stays on your network. A
+JetKVM's picture and input are encrypted (WebRTC), but its login, password
+included, is plain HTTP on your network: that's how the JetKVM works (its
+own web page does the same).
 
 ## Removing a device from your capture computer
 
@@ -115,6 +123,10 @@ The files are yours: they stay on your device unless you share them.
   iCloud Keychain or restored onto another iPhone. On Android they're
   encrypted with a key held in the Android Keystore, and the app's data
   isn't backed up or moved to another device.
+- The passwords of JetKVMs you add directly, kept the same way: on iPhone in
+  the Keychain for this device only, on Android encrypted with a key in the
+  Android Keystore, on the Mac in your Keychain. They're sent only to that
+  JetKVM, to log in.
 - Recordings and screenshots you saved on the Mac, where you chose.
 - On the Mac, a log file of what the app did (connections, your MiSTers'
   names and addresses, errors), so problems can be looked into. It never
@@ -130,7 +142,7 @@ Recordings and screenshots you saved stay wherever you put them.
 ## Permissions
 
 - **iPhone:** Local Network, which iOS asks for the first time the app looks
-  for or connects to capture servers. Nothing else.
+  for or connects to capture servers or JetKVMs. Nothing else.
 - **Android:** network access only (internet, network state, and Wi-Fi
   multicast, which Android needs before version 14 to find capture servers
   on your network). No location, contacts, camera, microphone or storage
