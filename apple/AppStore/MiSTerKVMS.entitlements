@@ -15,10 +15,13 @@
 	<true/>
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
-	<!-- Screenshots and recordings go only where the user picks in the
-	     standard Save / Open panel (SessionController.swift); no standing
-	     access to Movies or Pictures. -->
+	<!-- Screenshots and recordings go only to folders the user picks in the
+	     standard Open panel (SaveFolders.swift); no standing access to
+	     Movies or Pictures. The bookmark remembers a picked folder (Settings
+	     → Saving, or "Use this folder from now on"), as App Review advised. -->
 	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.files.bookmarks.app-scope</key>
 	<true/>
 </dict>
 </plist>

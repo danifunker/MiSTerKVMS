@@ -195,8 +195,8 @@ extension SessionView {
     }
 
     #if APP_STORE
-    static let saveScreenshotHelp = "Save the picture… (⇧⌘S)"
-    static let recordHelp = "Record video and audio… (⌘⇧R)"
+    static let saveScreenshotHelp = "Save the picture (⇧⌘S); where is set in Settings"
+    static let recordHelp = "Record video and audio (⌘⇧R); where is set in Settings"
     #else
     static let saveScreenshotHelp = "Save the picture to Pictures/MiSTerKVMS (⇧⌘S)"
     static let recordHelp = "Record video and audio to Movies/MiSTerKVMS (⌘⇧R)"

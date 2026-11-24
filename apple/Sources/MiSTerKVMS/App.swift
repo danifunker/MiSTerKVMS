@@ -6,6 +6,10 @@ struct MiSTerKVMSApp: App {
     @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
     @StateObject private var controller: SessionController
     @StateObject private var profiles: ProfileStore
+    #if APP_STORE
+    /// Menu titles end in "…" only while saving asks where.
+    @ObservedObject private var saveFolders = SaveFolders.shared
+    #endif
 
     init() {
         let controller = SessionController()
@@ -41,7 +45,7 @@ struct MiSTerKVMSApp: App {
                 Button("Type Text…") { controller.typingText = true }
                     .keyboardShortcut("v", modifiers: [.command, .shift])
                     .disabled(!controller.isConnected)
-                Button(controller.isRecording ? "Stop Recording" : Self.startRecordingTitle) { controller.toggleRecording() }
+                Button(controller.isRecording ? "Stop Recording" : startRecordingTitle) { controller.toggleRecording() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(!controller.isRecording && controller.videoStats?.state != "connected")
                 Button("Show Last Recording in Finder") { controller.showLastRecording() }
@@ -51,11 +55,13 @@ struct MiSTerKVMSApp: App {
                     .keyboardShortcut("c", modifiers: [.command, .shift])
                     .disabled(!controller.canScreenshot)
                 #if APP_STORE
-                Button("Save Screenshot…") { controller.saveScreenshot() }
+                Button(saveFolders.folders[.screenshots] == nil ? "Save Screenshot…" : "Save Screenshot") {
+                    controller.saveScreenshot()
+                }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
                     .disabled(!controller.canScreenshot)
-                Button("Show Last Screenshot in Finder") { controller.showScreenshots() }
-                    .disabled(controller.lastScreenshot == nil)
+                Button("Show Screenshots in Finder") { controller.showScreenshots() }
+                    .disabled(!controller.canShowScreenshots)
                 #else
                 Button("Save Screenshot") { controller.saveScreenshot() }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
@@ -108,9 +114,11 @@ struct MiSTerKVMSApp: App {
     }
 
     #if APP_STORE
-    private static let startRecordingTitle = "Start Recording…"
+    private var startRecordingTitle: String {
+        saveFolders.folders[.recordings] == nil ? "Start Recording…" : "Start Recording"
+    }
     #else
-    private static let startRecordingTitle = "Start Recording"
+    private let startRecordingTitle = "Start Recording"
     #endif
 }
 

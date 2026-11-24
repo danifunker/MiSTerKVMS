@@ -94,9 +94,10 @@ Both are of the MiSTer's picture (and, for recordings, its sound), never
 of your device's own screen, and both happen only when you press the
 button.
 
-- **Mac App Store app:** Record saves a video with sound, as an MP4 file in
-  a folder you choose. Screenshots are copied to the clipboard or saved as PNG
-  files where you choose in the Save panel.
+- **Mac App Store app:** Record saves a video with sound, as an MP4 file.
+  Screenshots are copied to the clipboard or saved as PNG files. Both go to
+  a folder you choose: each time, or one you set in Settings (or tick "Use
+  this folder from now on" when choosing).
 - **iPhone and Android:** there's no recording. The screenshot button copies
   the picture to the clipboard; on Android the app keeps that picture in
   its cache, so that other apps can paste it.
@@ -137,8 +138,10 @@ Recordings and screenshots you saved stay wherever you put them.
 - **Mac App Store app:** network access; the camera and microphone, which
   macOS asks for only if you use a capture card plugged into the Mac (macOS
   treats the card as a camera and microphone; its picture and sound are
-  shown and played on the Mac and go nowhere else); and the files and
-  folders you pick in a Save or Open panel, for recordings and screenshots.
+  shown and played on the Mac and go nowhere else); and the folders you
+  pick for recordings and screenshots. The app remembers a folder only if
+  you ask it to, and can save only there; Settings → Saving changes it or
+  goes back to asking each time.
 
 ## Clipboard
 
