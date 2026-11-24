@@ -7,7 +7,7 @@ KVM for MiSTer FPGA: keyboard/mouse to the MiSTer through mrext Remote, video an
 - `core/`: shared Rust core (`kvms-core`): Controller, mrext client, keymaps, video sources, renderer, audio, recording. UniFFI for Swift, C API (`capi.rs`) for Windows.
 - `cli/`: `misterkvms-cli` (package `kvms-cli`): screenshots, recording, input, cores from the command line; JSON out. `mcp` serves it to agents (`cli/src/mcp.rs`, docs/MCP.md).
 - `mkvm/`: the mkvm protocol between the capture server and viewers.
-- `capture/`: capture cards, video + audio (`kvms-capture`).
+- `capture/`: capture cards, video + audio (`kvms-capture`); a JetKVM is a device too (`jetkvm://<address>`).
 - `jetkvm/`: JetKVM client (`kvms-jetkvm`): WebRTC video decoded to BGRA, USB keyboard/mouse over hidrpc. docs/JETKVM.md.
 - `codec/`: picture encode/decode/convert/scale (`kvms-codec`).
 - `server/`: `misterkvms-capture`, the capture server.

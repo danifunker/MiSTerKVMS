@@ -2149,6 +2149,7 @@ dependencies = [
  "block2",
  "cpal",
  "dispatch2",
+ "kvms-jetkvm",
  "libc",
  "objc2",
  "objc2-av-foundation",

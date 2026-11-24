@@ -1,11 +1,13 @@
 # JetKVM
 
-A JetKVM can be a MiSTer's video and keyboard/mouse: its HDMI input takes the MiSTer's picture, and its USB cable is a real USB keyboard and mouse to the MiSTer. Status: `kvms-jetkvm` (the client) and `misterkvms-cli jetkvm` (a probe) work against a JetKVM Mini; the apps and the capture server don't use it yet.
+A JetKVM can be a MiSTer's video and keyboard/mouse: its HDMI input takes the MiSTer's picture, and its USB cable is a real USB keyboard and mouse to the MiSTer.
 
-Two ways to use one (planned):
+A JetKVM is a capture device with the id `jetkvm://<address>` (`capture/src/jetkvm.rs`), so two ways to use one share the same code:
 
-- **Through the capture server:** the server connects to the JetKVM and serves it as a normal stream. Every app works unchanged and several people can watch.
-- **Direct:** an app connects to the JetKVM itself. One viewer at a time.
+- **Through the capture server:** `misterkvms-capture add <name> --video jetkvm://<address> --audio none --mister <mister>`. The server connects to the JetKVM and serves it as a normal stream (1080p30, tested with a JetKVM Mini). Every app works unchanged and several people can watch. The setup page doesn't offer JetKVMs yet; add them with the command.
+- **Direct:** a local source of `jetkvm://<address>`, e.g. `misterkvms-cli --local jetkvm://<address> screenshot x.png`. One viewer at a time. The apps' host editor only lists capture cards for now, so this works from the CLI (and `local` in the settings file) but can't be chosen in the apps yet.
+
+Status: video both ways; keyboard and mouse through the JetKVM's USB from `misterkvms-cli jetkvm`. The apps still send input through mrext; JetKVM input in sessions, audio, and choosing a JetKVM in the apps and the setup page are next.
 
 ## Setting up
 

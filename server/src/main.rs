@@ -294,11 +294,18 @@ fn devices() -> Result<(), String> {
 
 fn add(dir: &std::path::Path, name: String, video: String, audio: String, mister: Option<String>) -> Result<(), String> {
     let devices = kvms_capture::devices().map_err(|e| e.to_string())?;
-    let device = devices
-        .iter()
-        .find(|d| d.id == video)
+    // A JetKVM isn't listed (it's on the network, not plugged in): its id
+    // is its address, `jetkvm://<address>`.
+    let jetkvm = video.starts_with(kvms_capture::jetkvm::PREFIX).then(|| kvms_capture::VideoDevice {
+        id: video.clone(),
+        name: format!("JetKVM {}", &video[kvms_capture::jetkvm::PREFIX.len()..]),
+        formats: Vec::new(),
+    });
+    let device = jetkvm
+        .as_ref()
+        .or_else(|| devices.iter().find(|d| d.id == video))
         .or_else(|| devices.iter().find(|d| d.name.eq_ignore_ascii_case(&video)))
-        .ok_or_else(|| format!("no capture card '{video}' (see `misterkvms-capture devices`)"))?;
+        .ok_or_else(|| format!("no capture card '{video}' (see `misterkvms-capture devices`; a JetKVM is jetkvm://<address>)"))?;
     let audio_names: Vec<String> = kvms_capture::audio_devices().into_iter().map(|a| a.name).collect();
     let audio = match audio.as_str() {
         "auto" => kvms_capture::matching_audio(&device.name, &audio_names).unwrap_or_default(),

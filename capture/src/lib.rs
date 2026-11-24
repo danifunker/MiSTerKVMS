@@ -5,7 +5,8 @@
 //!
 //! Video backends: Media Foundation (Windows), with DirectShow for cards
 //! Media Foundation can't open (AVerMedia GC573 and other PCIe cards);
-//! AVFoundation (macOS); V4L2 (Linux).
+//! AVFoundation (macOS); V4L2 (Linux). A JetKVM is a device too, by id
+//! `jetkvm://<address>` (jetkvm.rs).
 //! Audio goes through `cpal`, except USB inputs on Windows, read straight
 //! from their driver (audio.rs, docs/CAPTURE-SERVER.md §5.7).
 
@@ -15,6 +16,8 @@ mod avf;
 mod clock;
 #[cfg(windows)]
 mod ds;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+pub mod jetkvm;
 #[cfg(windows)]
 mod mf;
 pub mod pattern;
@@ -188,6 +191,8 @@ enum Inner {
     #[cfg(target_os = "linux")]
     V4l2(v4l2::Reader),
     Pattern(pattern::Pattern),
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    JetKvm(jetkvm::Reader),
 }
 
 impl VideoCapture {
@@ -216,6 +221,13 @@ impl VideoCapture {
             let (p, format) = pattern::Pattern::open(output, id == pattern::DEMO_ID);
             let audio = audio.then(|| p.audio());
             return Ok(Self { inner: Inner::Pattern(p), format, audio });
+        }
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        if id.starts_with(jetkvm::PREFIX) {
+            // Decoded to BGRA whatever `output` asks; no audio yet.
+            let _ = (format, output, audio);
+            let (reader, format) = jetkvm::Reader::open(id)?;
+            return Ok(Self { inner: Inner::JetKvm(reader), format, audio: None });
         }
         #[cfg(windows)]
         {
@@ -275,6 +287,8 @@ impl VideoCapture {
             #[cfg(target_os = "linux")]
             Inner::V4l2(reader) => reader.next_frame(timeout),
             Inner::Pattern(p) => Ok(p.next_frame(timeout)),
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            Inner::JetKvm(reader) => reader.next_frame(timeout),
         }
     }
 }

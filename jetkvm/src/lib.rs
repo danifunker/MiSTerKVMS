@@ -388,6 +388,28 @@ impl Connection {
         &self.sku
     }
 
+    /// Like `wait_frame`, but takes the picture out instead of copying it
+    /// (for a capture loop that consumes every frame). `Ok(None)` after
+    /// `timeout` without a new one; `Err` once the connection is gone.
+    pub fn take_frame(&self, after: u64, timeout: Duration) -> Result<Option<Frame>, String> {
+        let until = Instant::now() + timeout;
+        let (lock, cv) = &*self.shared;
+        let mut g = lock.lock().unwrap();
+        loop {
+            if g.frame.as_ref().is_some_and(|f| f.number > after) {
+                return Ok(g.frame.take());
+            }
+            if let Some(State::Closed(why)) = &g.state {
+                return Err(why.clone());
+            }
+            let now = Instant::now();
+            if now >= until {
+                return Ok(None);
+            }
+            g = cv.wait_timeout(g, until - now).unwrap().0;
+        }
+    }
+
     /// Wait until the hidrpc channel is ready.
     pub fn wait_hid(&self, timeout: Duration) -> Result<(), String> {
         let until = Instant::now() + timeout;
