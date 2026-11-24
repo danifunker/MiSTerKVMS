@@ -29,6 +29,8 @@ final class AppModel: ObservableObject {
         state = core.state()
         observer.model = self
         profiles = core.profiles()
+        // JetKVM passwords live in the Keychain; the core needs them in memory.
+        JetKVMPasswords.hand(to: profiles)
         loadKeys()
         showWelcome = !UserDefaults.standard.bool(forKey: Pref.welcomed)
         if showWelcome && profiles.contains(where: { !$0.isDemo }) {
@@ -53,6 +55,7 @@ final class AppModel: ObservableObject {
             state = core.state()
         case .profilesChanged:
             profiles = core.profiles()
+            JetKVMPasswords.hand(to: profiles)
             state = core.state()
             saveMovedKeys()
         case .captureRequested:

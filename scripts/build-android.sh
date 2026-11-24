@@ -51,7 +51,9 @@ command -v cargo-ndk >/dev/null || { echo "cargo-ndk missing: cargo install carg
 
 echo "==> Rust core ($VERSION build $BUILD_NUMBER; arm64-v8a, x86_64; API $MIN_SDK)"
 rm -rf "$JNILIBS"
-cargo ndk -P "$MIN_SDK" -t arm64-v8a -t x86_64 -o "$JNILIBS" build --release -p kvms-core
+# --link-libcxx-shared: the JetKVM decoder (openh264) is C++, built against
+# the NDK's libc++_shared.so, which must ship next to libkvms_core.so.
+cargo ndk -P "$MIN_SDK" -t arm64-v8a -t x86_64 -o "$JNILIBS" --link-libcxx-shared build --release -p kvms-core
 
 echo "==> Kotlin bindings"
 # Read from the built library itself: the exports are the same on every ABI.

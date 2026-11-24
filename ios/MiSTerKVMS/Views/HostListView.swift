@@ -107,6 +107,7 @@ extension HostProfile {
 
     var subtitle: String {
         if isDemo { return "Test pattern; your input is listed on screen" }
+        if let jetkvm = jetkvmAddress { return "JetKVM \(jetkvm)" }
         if !streamName.isEmpty { return "Stream \(streamName)" }
         if !misterHost.isEmpty { return misterHost }
         return "No stream chosen"

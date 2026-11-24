@@ -190,22 +190,14 @@ fn scan_addresses() -> Vec<Ipv4Addr> {
 /// JetKVMs on this computer's networks (each /24 it's on), about a second.
 #[uniffi::export]
 pub fn find_jetkvms() -> Vec<FoundJetKvm> {
-    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-    {
-        kvms_capture::jetkvm::scan(scan_addresses(), std::time::Duration::from_millis(400))
-            .into_iter()
-            .map(|f| {
-                let model = if f.sku.contains("mini") { "JetKVM Mini" } else { "JetKVM" };
-                let note = if f.is_setup { "" } else { ", not set up" };
-                FoundJetKvm { id: format!("jetkvm://{}", f.address), address: f.address.to_string(), name: format!("{model} ({}{note})", f.address), is_setup: f.is_setup }
-            })
-            .collect()
-    }
-    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-    {
-        let _ = scan_addresses;
-        Vec::new()
-    }
+    kvms_capture::jetkvm::scan(scan_addresses(), std::time::Duration::from_millis(400))
+        .into_iter()
+        .map(|f| {
+            let model = if f.sku.contains("mini") { "JetKVM Mini" } else { "JetKVM" };
+            let note = if f.is_setup { "" } else { ", not set up" };
+            FoundJetKvm { id: format!("jetkvm://{}", f.address), address: f.address.to_string(), name: format!("{model} ({}{note})", f.address), is_setup: f.is_setup }
+        })
+        .collect()
 }
 
 /// Audio inputs on this computer.

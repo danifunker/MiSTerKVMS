@@ -250,7 +250,6 @@ impl MisterSession {
     /// is still used for its status (the running core) and anything that
     /// isn't keyboard or mouse. Shares the JetKVM's connection with its
     /// video (one session per JetKVM).
-    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     pub fn with_jetkvm(
         address: String,
         mister_host: String,
@@ -352,7 +351,6 @@ impl SessionObserver for StatusOnly {
 
 /// Input through a JetKVM: the same messages the mrext worker sends,
 /// turned into USB HID reports.
-#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 mod jetkvm_input {
     use super::*;
     use kvms_capture::jetkvm::{self as jk, Connection, State, POINTER_MAX};
@@ -869,7 +867,6 @@ impl Worker {
 mod tests {
     use super::*;
 
-    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     #[test]
     fn mrext_messages_become_hid() {
         use jetkvm_input::{translate, Hid};

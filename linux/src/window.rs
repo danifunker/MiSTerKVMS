@@ -751,6 +751,8 @@ impl Ui {
 
     fn load_profiles(&self) {
         let profiles = self.core.profiles();
+        // JetKVM passwords live in the desktop keyring; the core needs them in memory.
+        crate::passwords::hand_to(&profiles);
         self.updating_list.set(true);
         while let Some(row) = self.host_list.row_at_index(0) {
             self.host_list.remove(&row);

@@ -26,6 +26,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -35,6 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.danifunker.misterkvms.model.jetkvmAddress
 import androidx.compose.ui.unit.dp
 import com.danifunker.misterkvms.core.HostProfile
 import com.danifunker.misterkvms.model.AppModel
@@ -53,6 +56,10 @@ fun HostSettingsView(model: AppModel, hostId: String, onDone: () -> Unit) {
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var askingName by rememberSaveable { mutableStateOf(false) }
     var pendingAgain by rememberSaveable { mutableStateOf(false) }
+    val jetkvm = profile?.jetkvmAddress
+    var jetkvmPassword by remember { mutableStateOf(jetkvm?.let { model.jetkvmPasswords.load(it) } ?: "") }
+    var viaMrext by rememberSaveable { mutableStateOf(profile?.input == "mrext") }
+    var misterHost by rememberSaveable { mutableStateOf(profile?.misterHost ?: "") }
     val scope = rememberCoroutineScope()
     BackHandler(onBack = onDone)
 
@@ -85,6 +92,11 @@ fun HostSettingsView(model: AppModel, hostId: String, onDone: () -> Unit) {
         profile?.let { p ->
             name.trim().takeIf { it.isNotEmpty() }?.let { p.name = it }
             p.internetAddress = internetAddress.trim()
+            if (jetkvm != null) {
+                model.jetkvmPasswords.save(jetkvm, jetkvmPassword)
+                p.input = if (viaMrext) "mrext" else "auto"
+                p.misterHost = misterHost.trim()
+            }
             model.save(p)
         }
         onDone()
@@ -103,7 +115,33 @@ fun HostSettingsView(model: AppModel, hostId: String, onDone: () -> Unit) {
             Heading("Name")
             OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp), singleLine = true)
 
-            if (profile != null) {
+            if (profile != null && jetkvm != null) {
+                Heading("JetKVM $jetkvm")
+                OutlinedTextField(
+                    jetkvmPassword, { jetkvmPassword = it },
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    placeholder = { Text("Password (none)") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                )
+                SwitchRow("Keyboard & mouse through mrext Remote", viaMrext) { viaMrext = it }
+                OutlinedTextField(
+                    misterHost, { misterHost = it },
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    placeholder = { Text("MiSTer address (optional)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+                )
+                Text(
+                    "Off: keyboard and mouse go through the JetKVM's USB. The password is encrypted with a key in this " +
+                        "phone's Keystore. One viewer at a time: opening the JetKVM's web page disconnects this phone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            } else if (profile != null) {
                 Heading("Over the internet")
                 SwitchRow("Use over the internet", profile.useInternet || pairing) { on ->
                     if (pairing) return@SwitchRow

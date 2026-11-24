@@ -1,4 +1,5 @@
-//! Add or edit a host: its capture server stream, the MiSTer, mouse options.
+//! Add or edit a host: its capture server stream (or a JetKVM, directly),
+//! the MiSTer, mouse options.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -52,6 +53,46 @@ pub fn show(parent: &impl IsA<gtk::Widget>, profile: HostProfile, is_new: bool, 
     video.add(&stream);
     video.add(&quality);
 
+    // A JetKVM directly, instead of a capture server stream.
+    let jetkvm_now = crate::passwords::jetkvm_of(&profile);
+    let use_jetkvm = adw::SwitchRow::builder()
+        .title("Use a JetKVM directly")
+        .subtitle("No capture server: this computer connects to the JetKVM. One viewer at a time.")
+        .active(jetkvm_now.is_some())
+        .build();
+    let jetkvm_address = adw::EntryRow::builder().title("JetKVM address").text(jetkvm_now.clone().unwrap_or_default().as_str()).build();
+    let jetkvm_password = adw::PasswordEntryRow::builder().title("JetKVM password (if it has one)").build();
+    if let Some(a) = &jetkvm_now {
+        jetkvm_password.set_text(&crate::passwords::load(a));
+    }
+    let via_mrext = adw::SwitchRow::builder()
+        .title("Keyboard and mouse through mrext Remote")
+        .subtitle("Off: through the JetKVM's USB, a real USB keyboard and mouse to the MiSTer.")
+        .active(profile.input == "mrext")
+        .build();
+    let jetkvm = adw::PreferencesGroup::builder()
+        .title("JetKVM")
+        .description(
+            "The password is kept in your desktop keyring (needs secret-tool). A JetKVM Mini only takes 1080p at \
+             30 Hz (set it in MiSTer.ini) and has no sound. Opening the JetKVM's web page disconnects this computer.",
+        )
+        .build();
+    jetkvm.add(&use_jetkvm);
+    jetkvm.add(&jetkvm_address);
+    jetkvm.add(&jetkvm_password);
+    jetkvm.add(&via_mrext);
+    {
+        let (video, rows) = (video.clone(), [jetkvm_address.clone().upcast::<gtk::Widget>(), jetkvm_password.clone().upcast(), via_mrext.clone().upcast()]);
+        let show = move |on: bool| {
+            video.set_visible(!on);
+            for r in &rows {
+                r.set_visible(on);
+            }
+        };
+        show(use_jetkvm.is_active());
+        use_jetkvm.connect_active_notify(move |s| show(s.is_active()));
+    }
+
     let mister_host = adw::EntryRow::builder().title("MiSTer IP or hostname").text(profile.mister_host.as_str()).build();
     let port = adw::SpinRow::with_range(1.0, 65535.0, 1.0);
     port.set_title("mrext port");
@@ -86,6 +127,7 @@ pub fn show(parent: &impl IsA<gtk::Widget>, profile: HostProfile, is_new: bool, 
     general.add(&name);
     page.add(&general);
     page.add(&video);
+    page.add(&jetkvm);
     page.add(&mister);
     page.add(&mouse);
 
@@ -236,7 +278,23 @@ pub fn show(parent: &impl IsA<gtk::Widget>, profile: HostProfile, is_new: bool, 
         save.connect_clicked(move |_| {
             let mut p = profile.clone();
             p.name = name.text().trim().to_string();
-            p.source = "capture".into();
+            let address = crate::passwords::key(&jetkvm_address.text());
+            if use_jetkvm.is_active() && !address.is_empty() {
+                p.source = "local".into();
+                p.local_video = format!("jetkvm://{address}");
+                p.input = if via_mrext.is_active() { "mrext".into() } else { "auto".into() };
+                if let Err(e) = crate::passwords::save(&address, &jetkvm_password.text()) {
+                    kvms_core::log(&format!("JetKVM password not kept: {e}"));
+                }
+                if p.name.is_empty() {
+                    p.name = "MiSTer (JetKVM)".into();
+                }
+            } else {
+                p.source = "capture".into();
+                if p.local_video.starts_with("jetkvm://") {
+                    p.local_video.clear();
+                }
+            }
             p.stream = stream.text().trim().to_string();
             p.quality = QUALITIES.get(quality.selected() as usize).map_or("auto", |(value, _)| value).to_string();
             p.mister_host = mister_host.text().trim().to_string();

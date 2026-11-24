@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Add a MiSTer: a stream found on the network, or one typed by address
-/// (`host[:port]/stream`) where discovery doesn't reach.
+/// (`host[:port]/stream`) where discovery doesn't reach; or a JetKVM,
+/// straight from this iPhone (no capture server).
 struct AddHostView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -16,6 +17,12 @@ struct AddHostView: View {
     @State private var pendingAdd: (() -> Void)?
     /// Added, but the internet part failed: say so, then close.
     @State private var internetError: String?
+    // A JetKVM directly: found on the network, or typed.
+    @State private var jetkvms: [FoundJetKvm] = []
+    @State private var searchingJetkvms = false
+    @State private var jetkvmAddress = ""
+    @State private var jetkvmPassword = ""
+    @State private var jetkvmMister = ""
 
     var body: some View {
         NavigationStack {
@@ -79,6 +86,45 @@ struct AddHostView: View {
                 } footer: {
                     Text("The capture server's address and the stream name, as on its setup page. Add the port if it isn't 5970: pc:6000/MiSTer-SS1.")
                 }
+
+                Section {
+                    if searchingJetkvms {
+                        HStack {
+                            ProgressView()
+                            Text("Looking for JetKVMs…").foregroundStyle(.secondary)
+                        }
+                    }
+                    ForEach(jetkvms, id: \.id) { found in
+                        Button {
+                            jetkvmAddress = found.address
+                        } label: {
+                            HStack {
+                                Text(found.name)
+                                Spacer()
+                                if JetKVMPasswords.key(jetkvmAddress) == found.address {
+                                    Image(systemName: "checkmark").foregroundStyle(.tint)
+                                }
+                            }
+                        }
+                        .tint(.primary)
+                        .disabled(!found.isSetup)
+                    }
+                    TextField("JetKVM address, e.g. 192.168.1.60", text: $jetkvmAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                    SecureField("Password (if it has one)", text: $jetkvmPassword)
+                    TextField("MiSTer address (optional)", text: $jetkvmMister)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                    Button("Add JetKVM") { addJetKVM() }
+                        .disabled(JetKVMPasswords.key(jetkvmAddress).isEmpty)
+                } header: {
+                    Text("JetKVM, directly")
+                } footer: {
+                    Text("Watch and control a MiSTer through its JetKVM without a capture server: its USB is the MiSTer's keyboard and mouse. One viewer at a time, at home only. The password stays in this \(Device.kind)'s Keychain. With the MiSTer's address (mrext Remote), the app also shows which core is running. A JetKVM Mini needs the MiSTer at 1080p 30 Hz and has no sound.")
+                }
             }
             .navigationTitle("Add a MiSTer")
             .navigationBarTitleDisplayMode(.inline)
@@ -100,8 +146,42 @@ struct AddHostView: View {
                 pendingAdd = nil
             }
         }
-        .onAppear { browser.start() }
+        .onAppear {
+            browser.start()
+            findJetKVMs()
+        }
         .onDisappear { browser.stop() }
+    }
+
+    private func findJetKVMs() {
+        searchingJetkvms = true
+        Task.detached {
+            let found = findJetkvms()
+            await MainActor.run {
+                jetkvms = found
+                searchingJetkvms = false
+                if jetkvmAddress.isEmpty, found.count == 1, found[0].isSetup { jetkvmAddress = found[0].address }
+            }
+        }
+    }
+
+    private func addJetKVM() {
+        let address = JetKVMPasswords.key(jetkvmAddress)
+        guard !address.isEmpty else { return }
+        let id = "jetkvm://\(address)"
+        guard !model.profiles.contains(where: { $0.localVideo.caseInsensitiveCompare(id) == .orderedSame }) else {
+            dismiss()
+            return
+        }
+        JetKVMPasswords.save(jetkvmPassword, for: address)
+        var profile = newHostProfile()
+        profile.source = "local"
+        profile.localVideo = id
+        profile.input = "auto"
+        profile.misterHost = jetkvmMister.trimmingCharacters(in: .whitespaces)
+        profile.name = name.trimmingCharacters(in: .whitespaces).isEmpty ? "MiSTer (JetKVM)" : name.trimmingCharacters(in: .whitespaces)
+        model.save(profile)
+        dismiss()
     }
 
     /// Already in the list (same stream name on the same capture server).

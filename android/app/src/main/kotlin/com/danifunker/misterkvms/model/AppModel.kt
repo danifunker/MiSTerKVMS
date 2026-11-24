@@ -84,9 +84,12 @@ class AppModel(private val app: Application) {
 
     private val demoModeState = prefs.bool(Pref.DEMO_MODE, false)
     private val keys = DeviceKeystore(app)
+    val jetkvmPasswords = JetKvmPasswords(app)
 
     init {
         loadKeys()
+        // JetKVM passwords live in the Keystore; the core needs them in memory.
+        jetkvmPasswords.handTo(profiles)
         // A touch screen captures as soon as a host connects (D6), whatever
         // the desktop apps' Capture automatically setting says.
         core.forceAutoCapture()
@@ -107,6 +110,7 @@ class AppModel(private val app: Application) {
             ControllerEvent.CHANGED -> state = core.state()
             ControllerEvent.PROFILES_CHANGED -> {
                 profiles = core.profiles()
+                jetkvmPasswords.handTo(profiles)
                 state = core.state()
                 saveMovedKeys()
             }
@@ -520,6 +524,7 @@ val HostProfile.streamName: String
 val HostProfile.subtitle: String
     get() = when {
         isDemo -> "Test pattern; your input is listed on screen"
+        jetkvmAddress != null -> "JetKVM $jetkvmAddress"
         streamName.isNotEmpty() -> "Stream $streamName"
         misterHost.isNotEmpty() -> misterHost
         else -> "No stream chosen"

@@ -12,6 +12,9 @@ struct HostSettingsView: View {
     @State private var error: String?
     @State private var askingName = false
     @State private var pendingAgain = false
+    @State private var jetkvmPassword = ""
+    @State private var input = "auto"
+    @State private var misterHost = ""
 
     private var profile: HostProfile? { model.profiles.first { $0.id == hostId } }
 
@@ -21,7 +24,23 @@ struct HostSettingsView: View {
                 Section("Name") {
                     TextField("Name", text: $name)
                 }
-                if let profile {
+                if let profile, profile.jetkvmAddress != nil {
+                    Section {
+                        SecureField("Password", text: $jetkvmPassword, prompt: Text("None"))
+                        Picker("Keyboard & mouse", selection: $input) {
+                            Text("Through the JetKVM's USB").tag("auto")
+                            Text("Through mrext Remote").tag("mrext")
+                        }
+                        TextField("MiSTer address (optional)", text: $misterHost)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                    } header: {
+                        Text("JetKVM \(profile.jetkvmAddress ?? "")")
+                    } footer: {
+                        Text("The password stays in this \(Device.kind)'s Keychain. One viewer at a time: opening the JetKVM's web page disconnects this \(Device.kind).")
+                    }
+                } else if let profile {
                     Section {
                         Toggle(isOn: Binding(get: { profile.useInternet || pairing }, set: { on in toggleInternet(profile, on) })) {
                             Text("Use over the internet")
@@ -64,6 +83,9 @@ struct HostSettingsView: View {
             .onAppear {
                 name = profile?.name ?? ""
                 internetAddress = profile?.internetAddress ?? ""
+                if let jetkvm = profile?.jetkvmAddress { jetkvmPassword = JetKVMPasswords.load(jetkvm) }
+                input = profile?.input == "mrext" ? "mrext" : "auto"
+                misterHost = profile?.misterHost ?? ""
             }
             .onChange(of: profile?.internetAddress) { _, address in
                 // Pairing brings the address the capture PC knows.
@@ -108,6 +130,11 @@ struct HostSettingsView: View {
             let trimmedName = name.trimmingCharacters(in: .whitespaces)
             if !trimmedName.isEmpty { p.name = trimmedName }
             p.internetAddress = internetAddress.trimmingCharacters(in: .whitespaces)
+            if let jetkvm = p.jetkvmAddress {
+                JetKVMPasswords.save(jetkvmPassword, for: jetkvm)
+                p.input = input
+                p.misterHost = misterHost.trimmingCharacters(in: .whitespaces)
+            }
             model.save(p)
         }
         dismiss()

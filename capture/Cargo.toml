@@ -12,10 +12,7 @@ name = "kvms_capture"
 cpal = "0.18"
 serde = { version = "1", features = ["derive"] }
 png = "0.18"
-
-# JetKVM as a device (jetkvm://): desktops only for now; openh264 (C++)
-# isn't tried in the iOS/Android builds yet.
-[target.'cfg(any(windows, target_os = "macos", target_os = "linux"))'.dependencies]
+# JetKVM as a device (jetkvm://), on every platform.
 kvms-jetkvm = { path = "../jetkvm" }
 
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -5,7 +5,10 @@ A JetKVM can be a MiSTer's video and keyboard/mouse: its HDMI input takes the Mi
 A JetKVM is a capture device with the id `jetkvm://<address>` (`capture/src/jetkvm.rs`), and its keyboard and mouse are a session input (`MisterSession::with_jetkvm`), so both ways to use one share the same code. A JetKVM allows one session, so its video and its keyboard and mouse share one connection (`kvms_jetkvm::shared`).
 
 - **Through the capture server:** in the setup page's card list (JetKVMs on the PC's networks are found in about a second; "Add JetKVM" takes one by address), or `misterkvms-capture add <name> --video jetkvm://<address> --audio none --mister <mister>`. The server serves it as a normal stream (1080p30 from a Mini, about 30 fps to viewers). Every app works unchanged, including the phones, and several people can watch.
-- **Direct, from the Mac and Windows apps:** "A capture card on this Mac/PC, or a JetKVM", then the JetKVM in the card list (or "JetKVM not listed?" with its address). One viewer at a time. The iPhone, Android and Linux apps watch through a capture server only.
+- **Direct, from the apps** (one viewer at a time, on the same network as the JetKVM):
+  - Mac and Windows: "A capture card on this Mac/PC, or a JetKVM", then the JetKVM in the card list (or "JetKVM not listed?" with its address).
+  - iPhone and Android: "Add a MiSTer" → "JetKVM, directly" lists the JetKVMs found on the network (or type its address); the MiSTer's address is optional. A JetKVM host's settings have its password and the keyboard/mouse choice.
+  - Linux: in the host editor, "Use a JetKVM directly".
 - **CLI:** `--local jetkvm://<address>` (or `local` in `local.settings.json`); `misterkvms-cli jetkvms` lists the JetKVMs on the network.
 
 **Keyboard and mouse** go through the JetKVM's USB, a real USB keyboard and mouse to the MiSTer, unless the host or stream says "mrext". mrext is then optional: with a MiSTer address it still supplies the running core's name. Held keys stay down (the client sends the keepalive the JetKVM needs every 50 ms; without it a key is let go after 100 ms).
@@ -13,12 +16,17 @@ A JetKVM is a capture device with the id `jetkvm://<address>` (`capture/src/jetk
 **Passwords** (a JetKVM set up with one). The core never stores secrets; it gets the password in memory (`set_jetkvm_password`) before it opens the JetKVM:
 
 - Mac app: the login Keychain (service "MiSTerKVMS JetKVM", one item per address).
+- iPhone app: its Keychain, this device only (not synced or backed up to another device).
+- Android app: encrypted with an AES key that stays in the Android Keystore, in the app's private storage (excluded from backups), as its pairing keys are.
 - Windows app: Credential Manager ("MiSTerKVMS JetKVM/<address>").
+- Linux app: the desktop keyring (GNOME Keyring, KWallet) through `secret-tool` (Debian/Ubuntu: `libsecret-tools`).
 - Capture server: in `capture.json` (owner-only on macOS and Linux), set in the setup page, which never gets it back, only whether one is set. `misterkvms-capture add` takes it from `JETKVM_PASSWORD`.
 - CLI: `jetkvm_password` in `local.settings.json` (git-ignored), or `JETKVM_PASSWORD`.
-- Phones never see it: they go through a capture server.
+- A phone watching through a capture server never sees it: the server has it.
 
 The JetKVM's own login is plain HTTP on the LAN; that's the device (its web page does the same).
+
+**Building:** the decoder (openh264) is C++, so the apps link the C++ runtime: `libc++` on Mac and iPhone (in `apple/Package.swift` and the Xcode projects), and on Android `scripts/build-android.sh` passes `--link-libcxx-shared` so `libc++_shared.so` ships next to `libkvms_core.so`. str0m's DTLS also builds aws-lc (C) on every platform.
 
 **Sound:** the JetKVM Mini has none from HDMI. Its "Enable Audio" setting is a USB sound card for the computer it's plugged into, and a MiSTer doesn't play sound to USB. Take the MiSTer's analog out to a line-in on the capture PC or this computer and choose that as the host's or stream's audio. (The full-size JetKVM streams HDMI audio since firmware 0.5.9; that isn't wired up here, untested.)
 

@@ -43,13 +43,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.danifunker.misterkvms.core.FoundJetKvm
 import com.danifunker.misterkvms.core.HostProfile
+import com.danifunker.misterkvms.core.findJetkvms
 import com.danifunker.misterkvms.core.newHostProfile
+import com.danifunker.misterkvms.model.JetKvmPasswords
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.danifunker.misterkvms.model.AppModel
 import com.danifunker.misterkvms.model.streamName
 
 /** Add a MiSTer: a stream found on the network, or one typed by address
- *  (`host[:port]/stream`) where discovery doesn't reach. */
+ *  (`host[:port]/stream`) where discovery doesn't reach; or a JetKVM,
+ *  straight from this phone (no capture server). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddHostView(model: AppModel, onDone: () -> Unit) {
@@ -70,6 +79,39 @@ fun AddHostView(model: AppModel, onDone: () -> Unit) {
     var internetError by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     BackHandler(onBack = onDone)
+    // A JetKVM directly: found on the network (a second's scan), or typed.
+    val jetkvms = remember { mutableStateListOf<FoundJetKvm>() }
+    var searchingJetkvms by remember { mutableStateOf(true) }
+    var jetkvmAddress by rememberSaveable { mutableStateOf("") }
+    var jetkvmPassword by remember { mutableStateOf("") }
+    var jetkvmMister by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        val found = withContext(Dispatchers.IO) { runCatching { findJetkvms() }.getOrDefault(emptyList()) }
+        jetkvms.clear()
+        jetkvms.addAll(found)
+        searchingJetkvms = false
+        if (jetkvmAddress.isEmpty() && found.size == 1 && found[0].isSetup) jetkvmAddress = found[0].address
+    }
+
+    fun addJetKvm() {
+        val key = JetKvmPasswords.key(jetkvmAddress)
+        if (key.isEmpty()) return
+        val id = "jetkvm://$key"
+        if (model.profiles.any { it.localVideo.equals(id, ignoreCase = true) }) {
+            onDone()
+            return
+        }
+        model.jetkvmPasswords.save(key, jetkvmPassword)
+        val profile = newHostProfile().apply {
+            source = "local"
+            localVideo = id
+            input = "auto"
+            misterHost = jetkvmMister.trim()
+            this.name = name.trim().ifEmpty { "MiSTer (JetKVM)" }
+        }
+        model.save(profile)
+        onDone()
+    }
 
     /** With the internet switch on, the capture PC lists this phone by its
      *  name: ask for a real one first. */
@@ -202,6 +244,61 @@ fun AddHostView(model: AppModel, onDone: () -> Unit) {
                 modifier = Modifier.padding(top = 8.dp),
             )
             Button(::addTyped, Modifier.padding(top = 16.dp), enabled = address.isNotBlank() && settingUp == null) { Text("Add") }
+
+            Text("JetKVM, directly", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 24.dp))
+            if (searchingJetkvms) {
+                Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text("Looking for JetKVMs…", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 12.dp))
+                }
+            }
+            jetkvms.forEach { found ->
+                Row(
+                    Modifier.fillMaxWidth().clickable(enabled = found.isSetup) { jetkvmAddress = found.address }.padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(found.name, Modifier.weight(1f))
+                    if (JetKvmPasswords.key(jetkvmAddress) == found.address) Icon(Icons.Filled.Check, "Chosen")
+                }
+            }
+            OutlinedTextField(
+                jetkvmAddress, { jetkvmAddress = it },
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                placeholder = { Text("JetKVM address, e.g. 192.168.1.60") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+            )
+            OutlinedTextField(
+                jetkvmPassword, { jetkvmPassword = it },
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                placeholder = { Text("Password (if it has one)") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+            )
+            OutlinedTextField(
+                jetkvmMister, { jetkvmMister = it },
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                placeholder = { Text("MiSTer address (optional)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+            )
+            Text(
+                "Watch and control a MiSTer through its JetKVM without a capture server: its USB is the MiSTer's " +
+                    "keyboard and mouse. One viewer at a time, at home only. The password is encrypted with a key in " +
+                    "this phone's Keystore. With the MiSTer's address (mrext Remote), the app also shows which core " +
+                    "is running. A JetKVM Mini needs the MiSTer at 1080p 30 Hz and has no sound.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Button(::addJetKvm, Modifier.padding(top = 16.dp), enabled = JetKvmPasswords.key(jetkvmAddress).isNotEmpty()) {
+                Text("Add JetKVM")
+            }
         }
     }
 

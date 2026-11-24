@@ -9,6 +9,8 @@ mod capture;
 #[cfg(target_os = "linux")]
 mod editor;
 #[cfg(target_os = "linux")]
+mod passwords;
+#[cfg(target_os = "linux")]
 mod video;
 #[cfg(target_os = "linux")]
 mod window;

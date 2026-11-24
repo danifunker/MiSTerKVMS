@@ -2211,15 +2211,9 @@ mod tests {
 }
 
 /// Keyboard and mouse through the host's JetKVM, if its input goes there.
-#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 fn jetkvm_session(profile: &HostProfile, observer: Arc<dyn SessionObserver>) -> Option<Arc<MisterSession>> {
     let address = profile.jetkvm_input()?;
     Some(MisterSession::with_jetkvm(address, profile.mister_host.clone(), profile.mister_port, observer))
-}
-
-#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-fn jetkvm_session(_profile: &HostProfile, _observer: Arc<dyn SessionObserver>) -> Option<Arc<MisterSession>> {
-    None
 }
 
 /// The password of the JetKVM at `address` (empty: it has none). The shell
@@ -2227,8 +2221,5 @@ fn jetkvm_session(_profile: &HostProfile, _observer: Arc<dyn SessionObserver>) -
 /// and whenever it changes; the core keeps it in memory only.
 #[uniffi::export]
 pub fn set_jetkvm_password(address: String, password: String) {
-    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     kvms_capture::jetkvm::set_password(&address, &password);
-    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-    let _ = (address, password);
 }
