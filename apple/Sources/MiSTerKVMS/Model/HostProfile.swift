@@ -27,6 +27,8 @@ final class ProfileStore: ObservableObject {
 
     func reload() {
         profiles = core.profiles()
+        // JetKVM passwords live in the Keychain; the core needs them in memory.
+        JetKVMPasswords.hand(to: profiles)
     }
 
     /// Add or replace (by id). If it's the open host, the core reconnects.

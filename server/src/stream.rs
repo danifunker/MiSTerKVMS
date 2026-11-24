@@ -152,6 +152,10 @@ impl Stream {
             threads: Mutex::new(Vec::new()),
         });
         log(&format!("stream '{}': start (video '{}', audio '{}', MiSTer '{}')", stream.config.name, stream.config.video_name, stream.config.audio, stream.config.mister));
+        if let Some(address) = stream.config.jetkvm() {
+            // Before anything opens it (empty: no password).
+            kvms_capture::jetkvm::set_password(&address, &stream.config.jetkvm_password);
+        }
         let mut threads = Vec::new();
         let s = stream.clone();
         threads.push(spawn(&format!("capture-{}", s.config.name), move || capture_loop(s)));
@@ -164,7 +168,13 @@ impl Stream {
             threads.push(spawn(&format!("audio-{}", s.config.name), move || audio_loop(s)));
         }
         *stream.threads.lock().unwrap() = threads;
-        if !stream.config.mister.trim().is_empty() {
+        if let Some(address) = stream.config.jetkvm_input() {
+            // Keyboard and mouse through the JetKVM's USB; mrext, if set,
+            // still gives the running core.
+            let observer = Arc::new(MisterObserver(Arc::downgrade(&stream)));
+            let session = MisterSession::with_jetkvm(address, stream.config.mister.trim().to_string(), stream.config.mister_port, observer);
+            *stream.mister.lock().unwrap() = Some(session);
+        } else if !stream.config.mister.trim().is_empty() {
             let observer = Arc::new(MisterObserver(Arc::downgrade(&stream)));
             let session = MisterSession::new(stream.config.mister.trim().to_string(), stream.config.mister_port, observer);
             *stream.mister.lock().unwrap() = Some(session);

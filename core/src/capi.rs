@@ -120,6 +120,13 @@ fn call(c: &Arc<Controller>, r: Value) -> Result<Value, String> {
             to_json(crate::discover::find_streams(wait.unwrap_or(2000)))
         }
         "captureCards" => to_json(crate::discover::capture_cards()),
+        "findJetkvms" => to_json(crate::discover::find_jetkvms()),
+        // The shell keeps JetKVM passwords (Credential Locker) and hands them
+        // over; the core keeps them in memory only.
+        "setJetkvmPassword" => {
+            crate::controller::set_jetkvm_password(arg(&r, "address")?, arg(&r, "password")?);
+            done
+        }
         "audioInputs" => to_json(crate::discover::audio_inputs()),
         "takeControl" => {
             c.take_control();

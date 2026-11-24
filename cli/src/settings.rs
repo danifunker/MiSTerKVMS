@@ -10,8 +10,13 @@
 //! ```json
 //! { "default": "ss1",
 //!   "machines": { "ss1": { "mister_host": "192.168.1.50", "stream": "mkvm://capture-pc/MiSTer-SS1" },
-//!                 "pi":  { "mister_host": "192.168.1.51", "local": "UGREEN 25773" } } }
+//!                 "pi":  { "mister_host": "192.168.1.51", "local": "UGREEN 25773" },
+//!                 "jet": { "mister_host": "192.168.1.52", "local": "jetkvm://192.168.1.60" } } }
 //! ```
+//!
+//! With `local` a JetKVM (`jetkvm://<address>`), keyboard and mouse go
+//! through its USB unless `input` is "mrext"; its password, if it has one,
+//! is `jetkvm_password` (or `JETKVM_PASSWORD`). This file is git-ignored.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -29,6 +34,8 @@ pub struct Machine {
     pub core_dest: Option<String>,
     pub type_delay_ms: Option<u64>,
     pub type_hold_ms: Option<u64>,
+    pub input: Option<String>,
+    pub jetkvm_password: Option<String>,
 }
 
 #[derive(serde::Deserialize, Default, Clone)]
@@ -48,6 +55,10 @@ pub struct Settings {
     /// Typing speed for `type` (ms between keys / how long each is held).
     pub type_delay_ms: Option<u64>,
     pub type_hold_ms: Option<u64>,
+    /// "auto" (default: a JetKVM's USB when `local` is one), "mrext" or "jetkvm".
+    pub input: Option<String>,
+    /// The JetKVM's password, if it has one.
+    pub jetkvm_password: Option<String>,
     /// Named MiSTers, chosen with `--host`.
     pub machines: BTreeMap<String, Machine>,
     /// Machine used when `--host` isn't given.
@@ -90,6 +101,8 @@ impl Settings {
         self.core_dest = m.core_dest.or(self.core_dest.take());
         self.type_delay_ms = m.type_delay_ms.or(self.type_delay_ms);
         self.type_hold_ms = m.type_hold_ms.or(self.type_hold_ms);
+        self.input = m.input.or(self.input.take());
+        self.jetkvm_password = m.jetkvm_password.or(self.jetkvm_password.take());
         self.machine = Some(name);
         Ok(())
     }
@@ -103,6 +116,23 @@ impl Settings {
 
     pub fn port(&self) -> u16 {
         self.mister_port.unwrap_or(8182)
+    }
+
+    /// The JetKVM `local` names, if any (`jetkvm://<address>`).
+    pub fn jetkvm(&self) -> Option<String> {
+        self.local.strip_prefix("jetkvm://").map(|a| a.trim_end_matches('/').to_string()).filter(|a| !a.is_empty())
+    }
+
+    /// The JetKVM whose USB gets keyboard and mouse, if any.
+    pub fn jetkvm_input(&self) -> Option<String> {
+        (self.input.as_deref() != Some("mrext")).then(|| self.jetkvm()).flatten()
+    }
+
+    /// Hand the JetKVM's password to the core before anything opens it.
+    pub fn apply_jetkvm_password(&self) {
+        if let (Some(address), Some(password)) = (self.jetkvm(), self.jetkvm_password.as_deref()) {
+            kvms_core::controller::set_jetkvm_password(address, password.to_string());
+        }
     }
 }
 

@@ -83,7 +83,7 @@ fn handle(server: Arc<Server>, mut request: Request) {
     let response = match (method, path.as_str()) {
         (Method::Get, "/") => Response::from_string(PAGE).with_header(header("Content-Type", "text/html; charset=utf-8")),
         (Method::Get, "/api/state") => json_response(state(&server)),
-        (Method::Get, "/api/devices") => json_response(devices()),
+        (Method::Get, "/api/devices") => json_response(devices(&server)),
         (Method::Get, "/api/update") => match update::latest() {
             Ok(l) => json_response(json!(l)),
             Err(e) => error(502, &e),
@@ -137,7 +137,7 @@ fn handle(server: Arc<Server>, mut request: Request) {
                 error(403, "wrong password")
             } else {
                 match read_json::<Streams>(&mut request) {
-                    Ok(streams) => match validate(&streams).and_then(|_| server.save(&streams).map_err(|e| e.to_string())) {
+                    Ok(streams) => match validate(&streams).and_then(|_| server.save(&keep_passwords(streams, &server)).map_err(|e| e.to_string())) {
                         Ok(()) => json_response(json!({ "ok": true })),
                         Err(e) => error(400, &e),
                     },
@@ -216,6 +216,23 @@ fn handle(server: Arc<Server>, mut request: Request) {
     let _ = request.respond(response);
 }
 
+/// The page never gets JetKVM passwords back, so a stream saved without one
+/// keeps the one it had (same name, same JetKVM) unless it asks to clear it.
+fn keep_passwords(mut streams: Streams, server: &Server) -> Streams {
+    let old = config::load_streams(server.dir());
+    for s in &mut streams.streams {
+        if s.clear_jetkvm_password {
+            s.jetkvm_password.clear();
+        } else if s.jetkvm_password.is_empty() {
+            if let Some(o) = old.streams.iter().find(|o| o.name == s.name && o.video == s.video) {
+                s.jetkvm_password = o.jetkvm_password.clone();
+            }
+        }
+        s.clear_jetkvm_password = false;
+    }
+    streams
+}
+
 fn state(server: &Server) -> serde_json::Value {
     let settings = server.settings();
     // Every configured stream, in order; those turned off have no status.
@@ -226,10 +243,12 @@ fn state(server: &Server) -> serde_json::Value {
         .filter(|c| !c.name.trim().is_empty())
         .map(|c| {
             let address = format!("mkvm://{}/{}", hostname_for_address(), encode_path(&c.name));
-            match running.iter().find(|s| s.config.name == c.name) {
-                Some(s) => json!({ "config": s.config, "status": s.status(), "address": address }),
-                None => json!({ "config": c, "status": null, "address": address }),
-            }
+            // The page learns only whether a JetKVM password is set.
+            let password_set = !c.jetkvm_password.is_empty();
+            let mut config = running.iter().find(|s| s.config.name == c.name).map_or(c.clone(), |s| s.config.clone());
+            config.jetkvm_password = String::new();
+            let status = running.iter().find(|s| s.config.name == c.name).map(|s| s.status());
+            json!({ "config": config, "status": status, "address": address, "jetkvmPasswordSet": password_set })
         })
         .collect();
     json!({
@@ -244,7 +263,7 @@ fn state(server: &Server) -> serde_json::Value {
     })
 }
 
-fn devices() -> serde_json::Value {
+fn devices(server: &Server) -> serde_json::Value {
     let video = kvms_capture::devices().unwrap_or_default();
     let audio = kvms_capture::audio_devices();
     let audio_names: Vec<String> = audio.iter().map(|a| a.name.clone()).collect();
@@ -262,6 +281,19 @@ fn devices() -> serde_json::Value {
             })
         })
         .collect();
+    // JetKVMs on this PC's networks (a second's scan), and those streams
+    // already use, which may be on another network.
+    let mut video = video;
+    let mut jetkvms: Vec<(String, String)> =
+        kvms_core::discover::find_jetkvms().into_iter().map(|j| (j.id, j.name)).collect();
+    for s in config::load_streams(server.dir()).streams {
+        if s.jetkvm().is_some() && !jetkvms.iter().any(|(id, _)| *id == s.video) {
+            jetkvms.push((s.video.clone(), if s.video_name.is_empty() { s.video.clone() } else { s.video_name.clone() }));
+        }
+    }
+    for (id, name) in jetkvms {
+        video.push(json!({ "id": id, "name": name, "formats": [], "best": null, "audio": null }));
+    }
     json!({ "video": video, "audio": audio })
 }
 

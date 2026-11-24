@@ -175,6 +175,9 @@ enum Cmd {
         #[arg(long)]
         click: Option<String>,
     },
+    /// List JetKVMs on this computer's networks (about a second): their
+    /// addresses, models and whether they're set up.
+    Jetkvms,
     /// List capture server streams found on the network.
     Streams {
         #[arg(long, default_value = "2s")]
@@ -258,7 +261,9 @@ fn warn_old_name() {
 }
 
 fn run(cli: Cli) -> Result<Value, String> {
-    exec(cli.cmd, &settings(cli.global)?)
+    let s = settings(cli.global)?;
+    s.apply_jetkvm_password();
+    exec(cli.cmd, &s)
 }
 
 /// The settings file, with the machine and overrides from the command line applied.
@@ -297,6 +302,7 @@ fn exec(cmd: Cmd, s: &Settings) -> Result<Value, String> {
             let input = jetkvm::Input { key, move_by, pos, click };
             jetkvm::probe(&address, password.as_deref(), duration(&d)?, save.as_deref(), input)
         }
+        Cmd::Jetkvms => Ok(json!({ "jetkvms": kvms_core::discover::find_jetkvms() })),
         Cmd::Streams { wait } => {
             let found = kvms_core::discover::find_streams(duration(&wait)?.as_millis() as u32);
             Ok(json!({ "streams": found }))
@@ -405,12 +411,22 @@ impl SessionObserver for Observer {
 
 fn connect(s: &Settings) -> Result<(Arc<MisterSession>, Arc<Mutex<Status>>), String> {
     let status = Arc::new(Mutex::new(Status::default()));
-    let session = MisterSession::new(s.mister()?, s.port(), Arc::new(Observer(status.clone())));
-    let until = Instant::now() + Duration::from_secs(5);
+    let observer = Arc::new(Observer(status.clone()));
+    // A JetKVM as the video: keyboard and mouse through its USB (mrext, if
+    // set, still gives the status), unless `input` says mrext.
+    let jetkvm = s.jetkvm_input();
+    let session = match &jetkvm {
+        Some(address) => MisterSession::with_jetkvm(address.clone(), s.mister_host.clone(), s.port(), observer),
+        None => MisterSession::new(s.mister()?, s.port(), observer),
+    };
+    let until = Instant::now() + Duration::from_secs(if jetkvm.is_some() { 15 } else { 5 });
     while !status.lock().unwrap().connected {
         if Instant::now() > until {
             session.disconnect();
-            return Err(format!("could not reach mrext Remote at {}:{}", s.mister_host, s.port()));
+            return Err(match jetkvm {
+                Some(a) => format!("could not reach the JetKVM at {a} for keyboard and mouse"),
+                None => format!("could not reach mrext Remote at {}:{}", s.mister_host, s.port()),
+            });
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -525,9 +541,20 @@ fn status(s: &Settings) -> Result<Value, String> {
             json!({ "stream": stream, "found": found.iter().any(|f| f.name.eq_ignore_ascii_case(&name)), "streams": found })
         }
         Ok(session::SessionSource { local: Some(card), local_audio, .. }) => {
-            let cards = kvms_capture::devices().unwrap_or_default();
-            let found = cards.iter().any(|d| d.id == card || d.name.eq_ignore_ascii_case(&card));
-            json!({ "local": card, "audio": local_audio, "found": found, "cards": cards.iter().map(|d| &d.name).collect::<Vec<_>>() })
+            if let Some(address) = card.strip_prefix("jetkvm://") {
+                // A JetKVM: is it there and set up (its public status page)?
+                let jetkvm = kvms_jetkvm::status(address);
+                let found = jetkvm.as_ref().is_ok_and(|st| st.is_setup);
+                let detail = match jetkvm {
+                    Ok(st) => json!({ "sku": st.sku, "setUp": st.is_setup }),
+                    Err(e) => json!({ "error": e }),
+                };
+                json!({ "local": card, "audio": local_audio, "found": found, "jetkvm": detail })
+            } else {
+                let cards = kvms_capture::devices().unwrap_or_default();
+                let found = cards.iter().any(|d| d.id == card || d.name.eq_ignore_ascii_case(&card));
+                json!({ "local": card, "audio": local_audio, "found": found, "cards": cards.iter().map(|d| &d.name).collect::<Vec<_>>() })
+            }
         }
         Ok(_) => json!({}),
         Err(e) => json!({ "error": e }),

@@ -104,7 +104,7 @@ It reads the MiSTer address and video source from `local.settings.json` (searche
 
 A typical test loop: `misterkvms-cli load-core out.rbf && misterkvms-cli wait-for-change --until-still 3s --timeout 60s && misterkvms-cli type 'dir\n' && misterkvms-cli screenshot --native result.png`.
 
-A JetKVM (including the Mini) can be a MiSTer's video and USB keyboard/mouse; so far through `misterkvms-cli jetkvm`. Setup and the MiSTer.ini video mode it needs: [docs/JETKVM.md](docs/JETKVM.md).
+A JetKVM (including the Mini) can be a MiSTer's video and USB keyboard/mouse, through the capture server or straight from the Mac and Windows apps. Setup, passwords, sound and the MiSTer.ini video mode it needs: [docs/JETKVM.md](docs/JETKVM.md).
 
 AI agents can drive it too: `misterkvms-cli mcp` is an MCP server with a tool per command (screenshots come back as images); see [docs/MCP.md](docs/MCP.md).
 

@@ -95,6 +95,8 @@ public sealed partial class MainWindow : Window
     private void LoadProfiles()
     {
         _profiles = _core.Call<List<HostProfile>>("profiles");
+        // JetKVM passwords live in Credential Manager; the core needs them in memory.
+        JetKvmPasswords.HandTo(_core, _profiles);
         _items = _profiles.Select(p => new HostItem(p)).ToList();
         _updatingList = true;
         HostList.ItemsSource = _items;

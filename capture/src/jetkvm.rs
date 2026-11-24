@@ -1,15 +1,16 @@
 //! A JetKVM as a capture device: id `jetkvm://<address>` (e.g.
 //! `jetkvm://192.168.1.50`). Its video arrives over WebRTC and is decoded to
 //! BGRA by `kvms-jetkvm`, so the capture server and the apps' local source
-//! use it like a card. A password, if the JetKVM has one, comes from
-//! `JETKVM_PASSWORD` for now (docs/JETKVM.md).
+//! use it like a card. Its password, if it has one, is set beforehand with
+//! `set_password` (by the server and the apps, from their settings).
 //!
 //! A JetKVM has one session: opening this one takes over from its web page
 //! or any other viewer.
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use kvms_jetkvm::Connection;
+pub use kvms_jetkvm::{address_key, no_picture_help, scan, set_password, shared, Connection, Found, State, POINTER_MAX};
 
 use crate::{clock, CaptureError, PixelFormat, VideoFormat, VideoFrame};
 
@@ -19,7 +20,8 @@ pub const PREFIX: &str = "jetkvm://";
 const FIRST_PICTURE: Duration = Duration::from_secs(10);
 
 pub(crate) struct Reader {
-    conn: Connection,
+    /// Shared with the JetKVM's keyboard and mouse, if a session uses them.
+    conn: Arc<Connection>,
     last: u64,
     /// The first picture, read while opening to learn the size.
     first: Option<VideoFrame>,
@@ -42,8 +44,7 @@ impl Reader {
         if address.is_empty() {
             return Err(CaptureError::NotFound("jetkvm:// needs an address".into()));
         }
-        let password = std::env::var("JETKVM_PASSWORD").ok();
-        let conn = Connection::connect(address, password.as_deref()).map_err(CaptureError::NotFound)?;
+        let conn = shared(address).map_err(CaptureError::NotFound)?;
         // The size comes with the first picture. No picture at all: the
         // JetKVM has no HDMI signal, and wait_frame says what to check.
         let first = conn.wait_frame(0, FIRST_PICTURE).map_err(CaptureError::Other)?;

@@ -20,7 +20,8 @@ use std::io::{ErrorKind, Read};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::sync::{Arc, Condvar, Mutex};
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, Weak};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -43,6 +44,7 @@ mod hid {
     pub const POINTER_REPORT: u8 = 0x03;
     pub const WHEEL_REPORT: u8 = 0x04;
     pub const KEYPRESS_REPORT: u8 = 0x05;
+    pub const KEYPRESS_KEEPALIVE: u8 = 0x09;
     pub const MOUSE_REPORT: u8 = 0x06;
     pub const VERSION: u8 = 0x01;
 }
@@ -73,6 +75,63 @@ fn agent() -> ureq::Agent {
         .http_status_as_error(false)
         .build()
         .into()
+}
+
+/// The key a JetKVM is known by: its address without scheme or slash.
+pub fn address_key(address: &str) -> String {
+    let a = address.trim();
+    let a = a.strip_prefix("jetkvm://").or_else(|| a.strip_prefix("http://")).unwrap_or(a);
+    a.trim_end_matches('/').to_ascii_lowercase()
+}
+
+fn passwords() -> &'static Mutex<HashMap<String, String>> {
+    static P: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    P.get_or_init(Default::default)
+}
+
+/// The password for the JetKVM at `address` (empty: none, no-password
+/// mode). The apps and the capture server set it from their settings
+/// before opening the device; `JETKVM_PASSWORD` is the fallback.
+pub fn set_password(address: &str, password: &str) {
+    let mut p = passwords().lock().unwrap();
+    if password.is_empty() {
+        p.remove(&address_key(address));
+    } else {
+        p.insert(address_key(address), password.to_string());
+    }
+}
+
+/// The password `set_password` gave for `address`, else `JETKVM_PASSWORD`.
+pub fn password(address: &str) -> Option<String> {
+    passwords()
+        .lock()
+        .unwrap()
+        .get(&address_key(address))
+        .cloned()
+        .or_else(|| std::env::var("JETKVM_PASSWORD").ok().filter(|p| !p.is_empty()))
+}
+
+fn live() -> &'static Mutex<HashMap<String, Weak<Connection>>> {
+    static L: OnceLock<Mutex<HashMap<String, Weak<Connection>>>> = OnceLock::new();
+    L.get_or_init(Default::default)
+}
+
+/// The open connection to the JetKVM at `address`, or a new one (with
+/// `password(address)`). A JetKVM has one session, so its video (a capture
+/// device) and its keyboard and mouse (a session) share it; it closes when
+/// the last user drops it.
+pub fn shared(address: &str) -> Result<Arc<Connection>, String> {
+    let key = address_key(address);
+    let mut l = live().lock().unwrap();
+    if let Some(c) = l.get(&key).and_then(Weak::upgrade) {
+        if !matches!(c.state(), State::Closed(_)) {
+            return Ok(c);
+        }
+    }
+    let c = Arc::new(Connection::connect(&key, password(&key).as_deref())?);
+    l.retain(|_, w| w.strong_count() > 0);
+    l.insert(key, Arc::downgrade(&c));
+    Ok(c)
 }
 
 /// Is there a JetKVM at `host`, and is it set up?
@@ -108,6 +167,56 @@ pub fn no_picture_help(sku: &str) -> String {
              its own, then restart the MiSTer. {common}"
         )
     }
+}
+
+/// A JetKVM found by `scan`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Found {
+    pub address: std::net::Ipv4Addr,
+    /// The model, e.g. "jetkvm-mini-ethernet".
+    pub sku: String,
+    pub is_setup: bool,
+}
+
+/// One address: a JetKVM answers `GET /device/status` (no login needed)
+/// with JSON naming its model.
+fn probe(ip: std::net::Ipv4Addr, timeout: Duration) -> Option<Found> {
+    use std::io::Write;
+    let mut tcp = TcpStream::connect_timeout(&SocketAddr::new(ip.into(), 80), timeout).ok()?;
+    tcp.set_read_timeout(Some(timeout)).ok()?;
+    tcp.set_write_timeout(Some(timeout)).ok()?;
+    write!(tcp, "GET /device/status HTTP/1.0\r\nHost: {ip}\r\nConnection: close\r\n\r\n").ok()?;
+    let mut reply = Vec::new();
+    let _ = tcp.take(4096).read_to_end(&mut reply);
+    let text = String::from_utf8_lossy(&reply);
+    let body = text.split_once("\r\n\r\n")?.1;
+    let status: DeviceStatus = serde_json::from_str(body.trim()).ok()?;
+    status.sku.to_ascii_lowercase().contains("jetkvm").then(|| Found { address: ip, sku: status.sku, is_setup: status.is_setup })
+}
+
+/// JetKVMs among `addresses`, probed in parallel. JetKVMs announce no mDNS
+/// service (only their hostname), so finding them means asking each address.
+pub fn scan(addresses: Vec<std::net::Ipv4Addr>, timeout: Duration) -> Vec<Found> {
+    const WORKERS: usize = 128;
+    let queue = Arc::new(Mutex::new(addresses));
+    let found = Arc::new(Mutex::new(Vec::new()));
+    let workers: Vec<_> = (0..WORKERS)
+        .map(|_| {
+            let (queue, found) = (queue.clone(), found.clone());
+            thread::spawn(move || loop {
+                let Some(ip) = queue.lock().unwrap().pop() else { break };
+                if let Some(f) = probe(ip, timeout) {
+                    found.lock().unwrap().push(f);
+                }
+            })
+        })
+        .collect();
+    for w in workers {
+        let _ = w.join();
+    }
+    let mut found = std::mem::take(&mut *found.lock().unwrap());
+    found.sort_by_key(|f| f.address);
+    found
 }
 
 /// Log in (password mode); returns the `authToken` cookie value.
@@ -229,9 +338,16 @@ impl Connection {
         if !st.is_setup {
             return Err(format!("{host}: JetKVM isn't set up yet; finish its setup in a browser first"));
         }
-        let cookie = match password.filter(|p| !p.is_empty()) {
-            Some(p) => Some(login(host, p)?),
-            None => None,
+        // A refused login may just be a JetKVM without a password (its
+        // login is off in no-password mode): go on without, and say "wrong
+        // password" only if signaling then asks for one.
+        let password = password.filter(|p| !p.is_empty());
+        let (cookie, login_error) = match password {
+            Some(p) => match login(host, p) {
+                Ok(c) => (Some(c), None),
+                Err(e) => (None, Some(e)),
+            },
+            None => (None, None),
         };
 
         let base = http_base(host);
@@ -253,9 +369,10 @@ impl Connection {
             req.headers_mut().insert("Cookie", format!("authToken={c}").parse().unwrap());
         }
         let (mut ws, _) = tungstenite::client(req, tcp).map_err(|e| match e {
-            tungstenite::HandshakeError::Failure(tungstenite::Error::Http(r)) if r.status() == 401 => {
-                "JetKVM needs a password".to_string()
-            }
+            tungstenite::HandshakeError::Failure(tungstenite::Error::Http(r)) if r.status() == 401 => match &login_error {
+                Some(_) => "wrong JetKVM password".to_string(),
+                None => "JetKVM needs a password".to_string(),
+            },
             e => format!("signaling handshake: {e}"),
         })?;
 
@@ -337,6 +454,8 @@ impl Connection {
             hid_open: false,
             video_tx,
             asked_keyframe: None,
+            held: HashSet::new(),
+            keepalive_at: Instant::now(),
         };
         let thread = thread::Builder::new()
             .name("jetkvm-rtc".into())
@@ -612,6 +731,10 @@ struct Worker {
     /// the network (decoding 1080p inline let the socket back up).
     video_tx: Sender<Vec<u8>>,
     asked_keyframe: Option<Instant>,
+    /// Keys held down (HID usages): kept down with a keepalive every
+    /// 50 ms, or the JetKVM lets them go after 100 ms.
+    held: HashSet<u8>,
+    keepalive_at: Instant,
 }
 
 impl Worker {
@@ -640,6 +763,14 @@ impl Worker {
             let timeout = self.drain()?;
             if self.stop.load(Ordering::Relaxed) {
                 return Ok(());
+            }
+
+            if self.hid_open && !self.held.is_empty() && self.keepalive_at.elapsed() >= Duration::from_millis(50) {
+                self.keepalive_at = Instant::now();
+                if let Some(mut ch) = self.rtc.channel(self.hid_channel) {
+                    ch.write(true, &[hid::KEYPRESS_KEEPALIVE]).map_err(|e| format!("hidrpc: {e}"))?;
+                }
+                continue;
             }
 
             // One mutation per drain: a command, else a packet, else the timeout.
@@ -684,6 +815,15 @@ impl Worker {
             Cmd::Hid(m) => {
                 if !self.hid_open {
                     return Ok(());
+                }
+                if m.len() == 3 && m[0] == hid::KEYPRESS_REPORT {
+                    if m[2] != 0 {
+                        if self.held.insert(m[1]) {
+                            self.keepalive_at = Instant::now();
+                        }
+                    } else {
+                        self.held.remove(&m[1]);
+                    }
                 }
                 if let Some(mut ch) = self.rtc.channel(self.hid_channel) {
                     ch.write(true, &m).map_err(|e| format!("hidrpc: {e}"))?;

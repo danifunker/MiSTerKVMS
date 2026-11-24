@@ -124,6 +124,17 @@ public sealed class HostProfile
     public double CursorGain { get; set; }
     /// <summary>The Type Text box's speed for this host (keys per second; 0: the default).</summary>
     public double TypeSpeed { get; set; }
+    /// <summary>Keyboard and mouse: "auto" (a JetKVM's USB when the video is
+    /// one), "mrext" or "jetkvm". The JetKVM's password isn't here: it's in
+    /// Credential Manager (JetKvmPasswords).</summary>
+    public string Input { get; set; } = "auto";
+
+    /// <summary>The JetKVM this host's video comes from (jetkvm://…), by address.</summary>
+    [JsonIgnore]
+    public string? JetKvmAddress =>
+        SourceKind == "local" && LocalVideo.StartsWith("jetkvm://", StringComparison.OrdinalIgnoreCase)
+            ? JetKvmPasswords.Key(LocalVideo) is { Length: > 0 } a ? a : null
+            : null;
 
     public HostProfile Clone() => (HostProfile)MemberwiseClone();
 
@@ -155,7 +166,7 @@ public sealed class HostProfile
     public string Subtitle => SourceKind switch
     {
         "capture" => StreamName.Length > 0 ? $"Stream {StreamName}" : "No stream chosen",
-        "local" => "Capture card on this PC",
+        "local" => JetKvmAddress is { } jet ? $"JetKVM {jet}" : "Capture card on this PC",
         _ => MisterHost,
     };
 }

@@ -14,7 +14,7 @@ public sealed class HostEditorDialog : ContentDialog
     private static readonly (string Kind, string Label)[] Sources =
     [
         ("capture", "MiSTerKVMS Capture (a stream on the network)"),
-        ("local", "A capture card on this PC"),
+        ("local", "A capture card on this PC, or a JetKVM"),
     ];
     private readonly ComboBox _source = new() { Header = "Video & audio from", HorizontalAlignment = HorizontalAlignment.Stretch };
 
@@ -39,6 +39,20 @@ public sealed class HostEditorDialog : ContentDialog
     private readonly Button _findCards = new() { Content = "Refresh", VerticalAlignment = VerticalAlignment.Bottom };
     private readonly TextBlock _cardResult = Caption();
     private List<CaptureCard> _cards = [];
+
+    // A JetKVM as the "card": its password (Credential Manager), where input
+    // goes, and an address to add one the scan didn't find.
+    private readonly StackPanel _jetkvmPanel = new() { Spacing = 12 };
+    private readonly PasswordBox _jetkvmPassword = new() { Header = "JetKVM password", PlaceholderText = "None" };
+    private readonly ComboBox _input = new() { Header = "Keyboard & mouse", HorizontalAlignment = HorizontalAlignment.Stretch };
+    private static readonly (string Value, string Label)[] Inputs =
+    [
+        ("auto", "Through the JetKVM's USB (a real USB keyboard and mouse)"),
+        ("mrext", "Through mrext Remote"),
+    ];
+    private readonly TextBox _jetkvmAddress = new() { Header = "JetKVM not listed? Its address", PlaceholderText = "192.168.1.60" };
+    private readonly Button _addJetkvm = new() { Content = "Add", VerticalAlignment = VerticalAlignment.Bottom };
+    private readonly TextBlock _misterHeader = Section("MiSTer (keyboard & mouse via mrext Remote)");
 
     // MiSTer
     private readonly TextBox _misterHost = new() { Header = "MiSTer IP or hostname", PlaceholderText = "192.168.1.50" };
@@ -80,6 +94,8 @@ public sealed class HostEditorDialog : ContentDialog
         _sensitivity.Value = profile.MouseSensitivity;
         _altClick.IsChecked = profile.AltClickIsMiddle;
         _rawMouse.IsOn = profile.RawMouse;
+        _input.ItemsSource = Inputs.Select(i => i.Label).ToList();
+        _input.SelectedIndex = profile.Input == "mrext" ? 1 : 0;
 
         _source.SelectionChanged += (_, _) => ShowSource();
         // The server's name for the stream, unless one was typed (empty
@@ -94,7 +110,10 @@ public sealed class HostEditorDialog : ContentDialog
         _card.SelectionChanged += (_, _) =>
         {
             if (_card.SelectedItem is CaptureCard c && c.Audio.Length > 0) SelectAudio(c.Audio);
+            ShowJetKvm();
         };
+        _input.SelectionChanged += (_, _) => ShowJetKvm();
+        _addJetkvm.Click += (_, _) => AddJetKvm();
         Opened += (_, _) => ShowSource(search: true);
         PrimaryButtonClick += (_, _) => Save();
 
@@ -106,9 +125,16 @@ public sealed class HostEditorDialog : ContentDialog
         _localPanel.Children.Add(SearchRow(_card, null, _findCards));
         _localPanel.Children.Add(_audio);
         _localPanel.Children.Add(_cardResult);
+        _localPanel.Children.Add(SearchRow(_jetkvmAddress, null, _addJetkvm));
         _localPanel.Children.Add(Caption("Only one program can use a capture card at a time: close OBS or MiSTerKVMS Capture if they have it open."));
 
-        _misterPanel.Children.Add(Section("MiSTer (keyboard & mouse via mrext Remote)"));
+        _jetkvmPanel.Children.Add(Section("JetKVM"));
+        _jetkvmPanel.Children.Add(_jetkvmPassword);
+        _jetkvmPanel.Children.Add(_input);
+        _jetkvmPanel.Children.Add(Caption("The password is kept in Windows Credential Manager. A JetKVM Mini only takes 1080p at 30 Hz (set it in MiSTer.ini) and has no HDMI sound: choose the input the MiSTer's sound goes to under Audio. One viewer at a time: opening the JetKVM's web page disconnects this PC."));
+        _localPanel.Children.Add(_jetkvmPanel);
+
+        _misterPanel.Children.Add(_misterHeader);
         _misterPanel.Children.Add(Row(_misterHost, _misterPort, 120));
 
         var rawNote = Caption("Sends your mouse's own movement without Windows pointer acceleration, so only the vintage OS accelerates it, like a mouse plugged straight in.");
@@ -150,6 +176,44 @@ public sealed class HostEditorDialog : ContentDialog
         _misterViaServer.Visibility = kind == "capture" ? Visibility.Visible : Visibility.Collapsed;
         if (kind == "capture" && (search || _foundStreams.Count == 0)) FindStreams();
         if (kind == "local" && (search || _cards.Count == 0)) FindCards();
+        ShowJetKvm();
+    }
+
+    private string ChosenVideo => _card.SelectedItem is CaptureCard c ? c.Id : Profile.LocalVideo;
+    private bool IsJetKvm => ChosenVideo.StartsWith("jetkvm://", StringComparison.OrdinalIgnoreCase);
+    private string _passwordFor = "";
+
+    private void ShowJetKvm()
+    {
+        bool jet = Kind == "local" && IsJetKvm;
+        _jetkvmPanel.Visibility = jet ? Visibility.Visible : Visibility.Collapsed;
+        _misterHeader.Text = jet && _input.SelectedIndex != 1
+            ? "MiSTer (optional: mrext Remote for the core's name)"
+            : "MiSTer (keyboard & mouse via mrext Remote)";
+        // Load the saved password once per JetKVM chosen.
+        if (jet && _passwordFor != ChosenVideo)
+        {
+            _passwordFor = ChosenVideo;
+            _jetkvmPassword.Password = JetKvmPasswords.Load(ChosenVideo);
+        }
+    }
+
+    /// <summary>A JetKVM the scan didn't find (another network), by address.</summary>
+    private void AddJetKvm()
+    {
+        var key = JetKvmPasswords.Key(_jetkvmAddress.Text);
+        if (key.Length == 0) return;
+        var id = $"jetkvm://{key}";
+        var card = _cards.FirstOrDefault(c => c.Id == id);
+        if (card == null)
+        {
+            card = new CaptureCard { Id = id, Name = $"JetKVM ({key})" };
+            _cards = [.. _cards, card];
+            _card.ItemsSource = _cards;
+        }
+        _card.SelectedItem = card;
+        _jetkvmAddress.Text = "";
+        ShowJetKvm();
     }
 
     private static TextBlock Caption(string text = "") => new()
@@ -234,7 +298,7 @@ public sealed class HostEditorDialog : ContentDialog
     private async void FindCards()
     {
         _findCards.IsEnabled = false;
-        _cardResult.Text = "Looking for capture cards…";
+        _cardResult.Text = "Looking for capture cards and JetKVMs…";
         List<CaptureCard> cards = [];
         List<AudioInput> audio = [];
         await Task.Run(() =>
@@ -254,7 +318,8 @@ public sealed class HostEditorDialog : ContentDialog
         _audio.ItemsSource = new List<AudioInput> { new() { Id = "", Name = "No audio" } }.Concat(audio).ToList();
         _card.SelectedItem = cards.FirstOrDefault(c => c.Id == Profile.LocalVideo) ?? (cards.Count == 1 ? cards[0] : null);
         SelectAudio(Profile.LocalVideo.Length > 0 ? Profile.LocalAudio : (_card.SelectedItem as CaptureCard)?.Audio ?? "");
-        _cardResult.Text = cards.Count == 0 ? "No capture cards found on this PC." : "";
+        _cardResult.Text = cards.Count == 0 ? "No capture cards or JetKVMs found." : "";
+        ShowJetKvm();
     }
 
     private void SelectAudio(string id)
@@ -276,5 +341,7 @@ public sealed class HostEditorDialog : ContentDialog
         Profile.MouseSensitivity = Math.Round(_sensitivity.Value, 2);
         Profile.AltClickIsMiddle = _altClick.IsChecked == true;
         Profile.RawMouse = _rawMouse.IsOn;
+        Profile.Input = Inputs[Math.Max(0, _input.SelectedIndex)].Value;
+        if (Kind == "local" && IsJetKvm) JetKvmPasswords.Save(_core, Profile.LocalVideo, _jetkvmPassword.Password);
     }
 }

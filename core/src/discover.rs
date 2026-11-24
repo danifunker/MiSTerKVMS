@@ -138,12 +138,14 @@ pub struct AudioInput {
     pub name: String,
 }
 
-/// Capture cards on this computer (for "Capture card on this computer").
+/// Capture cards on this computer (for "Capture card on this computer"),
+/// then JetKVMs on this computer's networks (id `jetkvm://<address>`).
+/// Takes about a second for the network scan; call it off the main thread.
 #[uniffi::export]
 pub fn capture_cards() -> Vec<CaptureCard> {
     let inputs = audio_inputs();
     let names: Vec<String> = inputs.iter().map(|a| a.name.clone()).collect();
-    kvms_capture::devices()
+    let mut cards: Vec<CaptureCard> = kvms_capture::devices()
         .unwrap_or_default()
         .into_iter()
         .map(|d| {
@@ -152,7 +154,58 @@ pub fn capture_cards() -> Vec<CaptureCard> {
                 .unwrap_or_default();
             CaptureCard { audio, id: d.id, name: d.name }
         })
-        .collect()
+        .collect();
+    cards.extend(find_jetkvms().into_iter().map(|j| CaptureCard { id: j.id, name: j.name, audio: String::new() }));
+    cards
+}
+
+/// A JetKVM on the network.
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct FoundJetKvm {
+    /// `jetkvm://<address>`, the device id to use as a host's local video.
+    pub id: String,
+    pub address: String,
+    /// e.g. "JetKVM Mini (192.168.1.50)".
+    pub name: String,
+    /// False: its setup wizard isn't done, so it refuses connections.
+    pub is_setup: bool,
+}
+
+/// The /24 around each of this computer's real (not virtual) IPv4 networks.
+fn scan_addresses() -> Vec<Ipv4Addr> {
+    let mut out = Vec::new();
+    for net in local_networks().into_iter().filter(|n| !n.is_virtual) {
+        let [a, b, c, own] = net.ip.octets();
+        if [a, b, c] == [169, 254, 0] || a == 169 && b == 254 {
+            continue;
+        }
+        out.extend((1..=254u8).filter(|d| *d != own).map(|d| Ipv4Addr::new(a, b, c, d)));
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// JetKVMs on this computer's networks (each /24 it's on), about a second.
+#[uniffi::export]
+pub fn find_jetkvms() -> Vec<FoundJetKvm> {
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    {
+        kvms_capture::jetkvm::scan(scan_addresses(), std::time::Duration::from_millis(400))
+            .into_iter()
+            .map(|f| {
+                let model = if f.sku.contains("mini") { "JetKVM Mini" } else { "JetKVM" };
+                let note = if f.is_setup { "" } else { ", not set up" };
+                FoundJetKvm { id: format!("jetkvm://{}", f.address), address: f.address.to_string(), name: format!("{model} ({}{note})", f.address), is_setup: f.is_setup }
+            })
+            .collect()
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        let _ = scan_addresses;
+        Vec::new()
+    }
 }
 
 /// Audio inputs on this computer.

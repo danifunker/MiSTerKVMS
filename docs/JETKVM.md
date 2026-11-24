@@ -2,17 +2,30 @@
 
 A JetKVM can be a MiSTer's video and keyboard/mouse: its HDMI input takes the MiSTer's picture, and its USB cable is a real USB keyboard and mouse to the MiSTer.
 
-A JetKVM is a capture device with the id `jetkvm://<address>` (`capture/src/jetkvm.rs`), so two ways to use one share the same code:
+A JetKVM is a capture device with the id `jetkvm://<address>` (`capture/src/jetkvm.rs`), and its keyboard and mouse are a session input (`MisterSession::with_jetkvm`), so both ways to use one share the same code. A JetKVM allows one session, so its video and its keyboard and mouse share one connection (`kvms_jetkvm::shared`).
 
-- **Through the capture server:** `misterkvms-capture add <name> --video jetkvm://<address> --audio none --mister <mister>`. The server connects to the JetKVM and serves it as a normal stream (1080p30, tested with a JetKVM Mini). Every app works unchanged and several people can watch. The setup page doesn't offer JetKVMs yet; add them with the command.
-- **Direct:** a local source of `jetkvm://<address>`, e.g. `misterkvms-cli --local jetkvm://<address> screenshot x.png`. One viewer at a time. The apps' host editor only lists capture cards for now, so this works from the CLI (and `local` in the settings file) but can't be chosen in the apps yet.
+- **Through the capture server:** in the setup page's card list (JetKVMs on the PC's networks are found in about a second; "Add JetKVM" takes one by address), or `misterkvms-capture add <name> --video jetkvm://<address> --audio none --mister <mister>`. The server serves it as a normal stream (1080p30 from a Mini, about 30 fps to viewers). Every app works unchanged, including the phones, and several people can watch.
+- **Direct, from the Mac and Windows apps:** "A capture card on this Mac/PC, or a JetKVM", then the JetKVM in the card list (or "JetKVM not listed?" with its address). One viewer at a time. The iPhone, Android and Linux apps watch through a capture server only.
+- **CLI:** `--local jetkvm://<address>` (or `local` in `local.settings.json`); `misterkvms-cli jetkvms` lists the JetKVMs on the network.
 
-Status: video both ways; keyboard and mouse through the JetKVM's USB from `misterkvms-cli jetkvm`. The apps still send input through mrext; JetKVM input in sessions, audio, and choosing a JetKVM in the apps and the setup page are next.
+**Keyboard and mouse** go through the JetKVM's USB, a real USB keyboard and mouse to the MiSTer, unless the host or stream says "mrext". mrext is then optional: with a MiSTer address it still supplies the running core's name. Held keys stay down (the client sends the keepalive the JetKVM needs every 50 ms; without it a key is let go after 100 ms).
+
+**Passwords** (a JetKVM set up with one). The core never stores secrets; it gets the password in memory (`set_jetkvm_password`) before it opens the JetKVM:
+
+- Mac app: the login Keychain (service "MiSTerKVMS JetKVM", one item per address).
+- Windows app: Credential Manager ("MiSTerKVMS JetKVM/<address>").
+- Capture server: in `capture.json` (owner-only on macOS and Linux), set in the setup page, which never gets it back, only whether one is set. `misterkvms-capture add` takes it from `JETKVM_PASSWORD`.
+- CLI: `jetkvm_password` in `local.settings.json` (git-ignored), or `JETKVM_PASSWORD`.
+- Phones never see it: they go through a capture server.
+
+The JetKVM's own login is plain HTTP on the LAN; that's the device (its web page does the same).
+
+**Sound:** the JetKVM Mini has none from HDMI. Its "Enable Audio" setting is a USB sound card for the computer it's plugged into, and a MiSTer doesn't play sound to USB. Take the MiSTer's analog out to a line-in on the capture PC or this computer and choose that as the host's or stream's audio. (The full-size JetKVM streams HDMI audio since firmware 0.5.9; that isn't wired up here, untested.)
 
 ## Setting up
 
 1. Connect the MiSTer's HDMI out to the JetKVM's HDMI in, and the JetKVM's USB cable to one of the MiSTer's USB ports.
-2. Open the JetKVM's address (shown on its screen) in a browser and finish its setup wizard. Until then it refuses every connection. "No password" is simplest on a home network; with a password, set `JETKVM_PASSWORD` for the CLI.
+2. Open the JetKVM's address (shown on its screen) in a browser and finish its setup wizard. Until then it refuses every connection. "No password" is simplest on a home network.
 3. Set the MiSTer's video mode (below), then restart the MiSTer.
 4. Check: `misterkvms-cli jetkvm <address> --save jetkvm.png --key down` saves a picture and moves the MiSTer menu down one row.
 
@@ -35,7 +48,7 @@ Status: video both ways; keyboard and mouse through the JetKVM's USB from `miste
 
 **Keys repeat or stick.** The client sends one press and one release per key (hidrpc type `0x05`). On the Mini, a full keyboard report with no keys did not release them.
 
-**"JetKVM isn't set up yet" / "JetKVM needs a password".** Finish the setup wizard; set `JETKVM_PASSWORD` if it has a password.
+**"JetKVM isn't set up yet" / "JetKVM needs a password" / "wrong password".** Finish the setup wizard; enter its password in the host editor (apps) or the stream editor (setup page).
 
 ## Protocol notes
 

@@ -218,6 +218,14 @@ const TOOLS: &[Tool] = &[
         ],
     },
     Tool {
+        name: "jetkvms",
+        command: "jetkvms",
+        description: "List the JetKVMs on this computer's networks (id jetkvm://<address>, address, model name, whether \
+                      set up). Takes about a second.",
+        read_only: true,
+        params: &[],
+    },
+    Tool {
         name: "streams",
         command: "streams",
         description: "List the capture server streams found on the network (name, address, which MiSTer each shows).",
@@ -362,7 +370,10 @@ fn run_tool(tool: &Tool, args: &Map<String, Value>, defaults: &Global) -> Result
     }
     let cli = Cli::try_parse_from(argv(tool, &args)?).map_err(|e| e.render().to_string().trim().to_string())?;
     let global = cli.global.or(defaults);
-    let result = crate::settings(global).and_then(|s| crate::exec(cli.cmd, &s));
+    let result = crate::settings(global).and_then(|s| {
+        s.apply_jetkvm_password();
+        crate::exec(cli.cmd, &s)
+    });
     let mut content = Vec::new();
     match (tool.name, result) {
         ("screenshot", Ok(mut v)) => {

@@ -31,6 +31,28 @@ pub struct StreamConfig {
     /// Off: the stream is kept but not run, so its card is free for other
     /// apps (OBS…). Missing in older files: on.
     pub enabled: bool,
+    /// Where viewers' keyboard and mouse go: "mrext", "jetkvm" (the
+    /// JetKVM's USB: a real USB keyboard and mouse to the MiSTer) or "auto"
+    /// (the JetKVM's when the video is a JetKVM, else mrext).
+    pub input: String,
+    /// The JetKVM's password, when the video is a JetKVM that has one. Kept
+    /// in this file (owner-only), never sent to the setup page.
+    pub jetkvm_password: String,
+    /// From the setup page only: remove the saved password.
+    #[serde(skip_serializing)]
+    pub clear_jetkvm_password: bool,
+}
+
+impl StreamConfig {
+    /// The JetKVM the video comes from (`jetkvm://<address>`), by address.
+    pub fn jetkvm(&self) -> Option<String> {
+        self.video.strip_prefix("jetkvm://").map(|a| a.trim().trim_end_matches('/').to_string()).filter(|a| !a.is_empty())
+    }
+
+    /// The JetKVM whose USB gets the keyboard and mouse, if any.
+    pub fn jetkvm_input(&self) -> Option<String> {
+        (self.input != "mrext").then(|| self.jetkvm()).flatten()
+    }
 }
 
 impl Default for StreamConfig {
@@ -45,6 +67,9 @@ impl Default for StreamConfig {
             mister_port: 8182,
             quality: 85,
             enabled: true,
+            input: "auto".into(),
+            jetkvm_password: String::new(),
+            clear_jetkvm_password: false,
         }
     }
 }
@@ -209,6 +234,13 @@ pub fn save_streams(dir: &Path, streams: &Streams) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let tmp = dir.join("capture.json.tmp");
     std::fs::write(&tmp, serde_json::to_vec_pretty(streams).expect("serializable"))?;
+    // It can hold JetKVM passwords: readable by its owner only. (Windows:
+    // the ProgramData folder's own permissions, where the service runs.)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+    }
     std::fs::rename(tmp, dir.join("capture.json"))
 }
 

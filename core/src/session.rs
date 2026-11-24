@@ -245,6 +245,37 @@ impl MisterSession {
 
     /// A demo host's session: no MiSTer; the input it would have sent is
     /// written to `demo_log` instead (crate::demo).
+    /// Keyboard and mouse through a JetKVM's USB (a real USB keyboard and
+    /// mouse to the MiSTer) instead of mrext. With a MiSTer address, mrext
+    /// is still used for its status (the running core) and anything that
+    /// isn't keyboard or mouse. Shares the JetKVM's connection with its
+    /// video (one session per JetKVM).
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    pub fn with_jetkvm(
+        address: String,
+        mister_host: String,
+        mister_port: u16,
+        observer: Arc<dyn SessionObserver>,
+    ) -> Arc<Self> {
+        let (tx, rx) = mpsc::channel();
+        let counters = Arc::new(Counters::default());
+        let status = (!mister_host.trim().is_empty())
+            .then(|| MisterSession::new(mister_host.trim().to_string(), mister_port, Arc::new(StatusOnly(observer.clone()))));
+        let worker = jetkvm_input::Worker::new(address.clone(), observer, rx, counters.clone(), status);
+        thread::Builder::new()
+            .name(format!("jetkvm-input-{address}"))
+            .spawn(move || worker.run())
+            .expect("spawn session worker");
+        Arc::new(Self {
+            tx,
+            input: Mutex::new(InputState::default()),
+            counters,
+            rate: Mutex::new((Instant::now(), 0, 0.0)),
+            cursor_sink: Mutex::new(None),
+            demo: None,
+        })
+    }
+
     pub(crate) fn demo(observer: Arc<dyn SessionObserver>) -> Arc<Self> {
         let (tx, rx) = mpsc::channel();
         let counters = Arc::new(Counters::default());
@@ -308,6 +339,228 @@ impl Drop for MisterSession {
 type Socket = WebSocket<TcpStream>;
 
 /// A demo host's input: always connected, everything written to the log.
+/// mrext beside a JetKVM: its status goes to the shell, its connection
+/// state doesn't (the JetKVM's is the input's).
+struct StatusOnly(Arc<dyn SessionObserver>);
+
+impl SessionObserver for StatusOnly {
+    fn on_state(&self, _state: ConnectionState) {}
+    fn on_status(&self, key: String, value: String) {
+        self.0.on_status(key, value);
+    }
+}
+
+/// Input through a JetKVM: the same messages the mrext worker sends,
+/// turned into USB HID reports.
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod jetkvm_input {
+    use super::*;
+    use kvms_capture::jetkvm::{self as jk, Connection, State, POINTER_MAX};
+
+    pub(super) struct Worker {
+        address: String,
+        observer: Arc<dyn SessionObserver>,
+        rx: Receiver<Cmd>,
+        counters: Arc<Counters>,
+        /// mrext for status and non-input messages, if there's a MiSTer address.
+        status: Option<Arc<MisterSession>>,
+        pending: (f64, f64),
+        last_flush: Instant,
+        buttons: u8,
+    }
+
+    impl Worker {
+        pub(super) fn new(
+            address: String,
+            observer: Arc<dyn SessionObserver>,
+            rx: Receiver<Cmd>,
+            counters: Arc<Counters>,
+            status: Option<Arc<MisterSession>>,
+        ) -> Self {
+            Self { address, observer, rx, counters, status, pending: (0.0, 0.0), last_flush: Instant::now(), buttons: 0 }
+        }
+
+        pub(super) fn run(mut self) {
+            loop {
+                self.observer.on_state(ConnectionState::Connecting);
+                let reason = match jk::shared(&self.address) {
+                    Ok(conn) => match conn.wait_hid(Duration::from_secs(10)) {
+                        Ok(()) => {
+                            self.counters.connected.store(1, Ordering::Relaxed);
+                            self.observer.on_state(ConnectionState::Connected);
+                            let exit = self.serve(&conn);
+                            self.counters.connected.store(0, Ordering::Relaxed);
+                            match exit {
+                                None => break,
+                                Some(reason) => reason,
+                            }
+                        }
+                        Err(e) => e,
+                    },
+                    Err(e) => e,
+                };
+                self.observer.on_state(ConnectionState::Disconnected { reason });
+                if self.idle(RECONNECT_DELAY) {
+                    break;
+                }
+            }
+            if let Some(s) = self.status.take() {
+                s.disconnect();
+            }
+            self.observer.on_state(ConnectionState::Disconnected { reason: "closed".into() });
+        }
+
+        /// None: shut down; Some(reason): lost.
+        fn serve(&mut self, conn: &Connection) -> Option<String> {
+            self.pending = (0.0, 0.0);
+            loop {
+                let mut next = match self.rx.recv_timeout(MOUSE_FLUSH) {
+                    Ok(cmd) => Some(cmd),
+                    Err(RecvTimeoutError::Timeout) => None,
+                    Err(RecvTimeoutError::Disconnected) => return None,
+                };
+                while let Some(cmd) = next.take() {
+                    self.counters.queued.fetch_sub(1, Ordering::Relaxed);
+                    match cmd {
+                        Cmd::Shutdown => {
+                            self.flush_mouse(conn);
+                            self.release(conn);
+                            return None;
+                        }
+                        Cmd::Move(dx, dy) => {
+                            self.pending.0 += dx;
+                            self.pending.1 += dy;
+                        }
+                        Cmd::Send(m) => {
+                            self.flush_mouse(conn);
+                            self.send(conn, &m);
+                        }
+                        Cmd::Delay(d) => {
+                            self.flush_mouse(conn);
+                            thread::sleep(d);
+                        }
+                    }
+                    next = self.rx.try_recv().ok();
+                }
+                if self.last_flush.elapsed() >= MOUSE_FLUSH {
+                    self.flush_mouse(conn);
+                }
+                if let State::Closed(why) = conn.state() {
+                    return Some(why);
+                }
+            }
+        }
+
+        fn idle(&mut self, wait: Duration) -> bool {
+            let until = Instant::now() + wait;
+            loop {
+                let left = until.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return false;
+                }
+                match self.rx.recv_timeout(left) {
+                    Ok(Cmd::Shutdown) | Err(RecvTimeoutError::Disconnected) => return true,
+                    Ok(_) => {
+                        self.counters.queued.fetch_sub(1, Ordering::Relaxed);
+                    }
+                    Err(RecvTimeoutError::Timeout) => {}
+                }
+            }
+        }
+
+        fn flush_mouse(&mut self, conn: &Connection) {
+            let (x, y) = (self.pending.0.trunc(), self.pending.1.trunc());
+            if x == 0.0 && y == 0.0 {
+                return;
+            }
+            self.pending.0 -= x;
+            self.pending.1 -= y;
+            self.last_flush = Instant::now();
+            for (x, y) in split_move(x as i32, y as i32) {
+                conn.mouse_relative(x as i8, y as i8, self.buttons);
+                self.counters.sent.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        /// Let go of everything, so nothing stays held after the session.
+        fn release(&mut self, conn: &Connection) {
+            self.buttons = 0;
+            conn.mouse_relative(0, 0, 0);
+        }
+
+        fn send(&mut self, conn: &Connection, m: &str) {
+            match translate(m) {
+                Some(Hid::Key(usage, down)) => conn.key(usage, down),
+                Some(Hid::Button(bit, down)) => {
+                    if down {
+                        self.buttons |= bit;
+                    } else {
+                        self.buttons &= !bit;
+                    }
+                    conn.mouse_relative(0, 0, self.buttons);
+                }
+                Some(Hid::Pos(x, y)) => {
+                    let scale = |v: u32| v.min(1000) * POINTER_MAX / 1000;
+                    conn.pointer(scale(x), scale(y), self.buttons);
+                }
+                Some(Hid::Move(x, y)) => {
+                    for (x, y) in split_move(x, y) {
+                        conn.mouse_relative(x as i8, y as i8, self.buttons);
+                    }
+                }
+                None => {
+                    // Not keyboard or mouse (e.g. an mrext command): mrext, if any.
+                    if let Some(s) = &self.status {
+                        s.send_message(m.to_string());
+                    }
+                    return;
+                }
+            }
+            self.counters.sent.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[derive(Debug, PartialEq)]
+    pub(super) enum Hid {
+        Key(u8, bool),
+        Button(u8, bool),
+        /// Absolute, per mille of the screen.
+        Pos(u32, u32),
+        Move(i32, i32),
+    }
+
+    /// An mrext input message as a HID action (None: not input).
+    pub(super) fn translate(m: &str) -> Option<Hid> {
+        let (kind, arg) = m.split_once(':')?;
+        match kind {
+            "kbdRawDown" | "kbdRawUp" => {
+                let code: u16 = arg.trim().parse().ok()?;
+                let usage = crate::keymap::linux_to_hid(code)?;
+                Some(Hid::Key(u8::try_from(usage).ok()?, kind == "kbdRawDown"))
+            }
+            "mouseBtn" => {
+                let (name, dir) = arg.split_once('_')?;
+                let bit = match name {
+                    "left" => 1,
+                    "right" => 2,
+                    "middle" => 4,
+                    _ => return None,
+                };
+                Some(Hid::Button(bit, dir == "down"))
+            }
+            "mousePos" => {
+                let (x, y) = arg.split_once(',')?;
+                Some(Hid::Pos(x.trim().parse().ok()?, y.trim().parse().ok()?))
+            }
+            "mouseMove" => {
+                let (x, y) = arg.split_once(',')?;
+                Some(Hid::Move(x.trim().parse().ok()?, y.trim().parse().ok()?))
+            }
+            _ => None,
+        }
+    }
+}
+
 struct DemoWorker {
     observer: Arc<dyn SessionObserver>,
     rx: Receiver<Cmd>,
@@ -615,6 +868,20 @@ impl Worker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn mrext_messages_become_hid() {
+        use jetkvm_input::{translate, Hid};
+        // Linux KEY_A (30) is HID 0x04; KEY_LEFTCTRL (29) is 0xE0.
+        assert_eq!(translate("kbdRawDown:30"), Some(Hid::Key(0x04, true)));
+        assert_eq!(translate("kbdRawUp:29"), Some(Hid::Key(0xE0, false)));
+        assert_eq!(translate("mouseBtn:right_down"), Some(Hid::Button(2, true)));
+        assert_eq!(translate("mouseBtn:left_up"), Some(Hid::Button(1, false)));
+        assert_eq!(translate("mousePos:500,250"), Some(Hid::Pos(500, 250)));
+        assert_eq!(translate("mouseMove:-3,4"), Some(Hid::Move(-3, 4)));
+        assert_eq!(translate("launch:/media/fat/menu.rbf"), None);
+    }
 
     #[test]
     fn big_moves_go_as_several_packets() {

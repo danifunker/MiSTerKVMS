@@ -26,6 +26,8 @@ let package = Package(
                 .linkedFramework("CoreAudio"), .linkedFramework("Foundation"),
                 .linkedFramework("CoreFoundation"), .linkedLibrary("objc"),
                 .linkedLibrary("iconv"),
+                // The JetKVM decoder (openh264) is C++.
+                .linkedLibrary("c++"),
             ]
         ),
         // UniFFI-generated Swift bindings for the Rust core.

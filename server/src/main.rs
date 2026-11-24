@@ -64,6 +64,10 @@ enum Cmd {
         /// The MiSTer's address (mrext Remote).
         #[arg(long)]
         mister: Option<String>,
+        /// Keyboard and mouse: "auto" (a JetKVM's USB when the video is
+        /// one), "mrext" or "jetkvm".
+        #[arg(long, default_value = "auto")]
+        input: String,
     },
     /// Remove a stream.
     Remove { name: String },
@@ -178,7 +182,7 @@ fn main() {
             println!("{}", serde_json::to_string_pretty(&config::load_streams(&dir)).unwrap());
             Ok(())
         }
-        Cmd::Add { name, video, audio, mister } => add(&dir, name, video, audio, mister),
+        Cmd::Add { name, video, audio, mister, input } => add(&dir, name, video, audio, mister, input),
         Cmd::Remove { name } => {
             let mut s = config::load_streams(&dir);
             let before = s.streams.len();
@@ -292,7 +296,9 @@ fn devices() -> Result<(), String> {
     Ok(())
 }
 
-fn add(dir: &std::path::Path, name: String, video: String, audio: String, mister: Option<String>) -> Result<(), String> {
+/// A JetKVM's password, if it has one, comes from `JETKVM_PASSWORD` (not
+/// a command-line argument, which would end up in the shell's history).
+fn add(dir: &std::path::Path, name: String, video: String, audio: String, mister: Option<String>, input: String) -> Result<(), String> {
     let devices = kvms_capture::devices().map_err(|e| e.to_string())?;
     // A JetKVM isn't listed (it's on the network, not plugged in): its id
     // is its address, `jetkvm://<address>`.
@@ -320,6 +326,8 @@ fn add(dir: &std::path::Path, name: String, video: String, audio: String, mister
         video_name: device.name.clone(),
         audio: audio.clone(),
         mister: mister.unwrap_or_default(),
+        input,
+        jetkvm_password: if jetkvm.is_some() { std::env::var("JETKVM_PASSWORD").unwrap_or_default() } else { String::new() },
         ..Default::default()
     });
     config::save_streams(dir, &streams).map_err(|e| e.to_string())?;

@@ -5,5 +5,6 @@
 enum KVMSCore {
     static func captureCards() -> [CaptureCard] { MiSTerKVMS.captureCards() }
     static func audioInputs() -> [AudioInput] { MiSTerKVMS.audioInputs() }
+    static func setJetkvmPassword(address: String, password: String) { MiSTerKVMS.setJetkvmPassword(address: address, password: password) }
 }
 #endif

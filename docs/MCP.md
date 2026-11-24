@@ -60,6 +60,7 @@ Every tool also takes `host`, `mister`, `stream`, `local`, `local_audio` and `se
 | `stream` | `address` (required, `mkvm://host/stream`), `duration` (default 5s), `max` (`WIDTHxHEIGHT`), `fps`, `quality` (1-100), `save` (path for the last picture as PNG) | JSON: what arrived: fps, size, bandwidth, latency | `stream <address> [--duration] [--max] [--fps] [--quality] [--save]` |
 | `streams` | `wait` (default 2s) | JSON: streams [{name, address, mister, ...}] | `streams [--wait]` |
 | `jetkvm` | `address` (required, the JetKVM's IP or name), `duration` (default 3s), `save` (path for the last picture as PNG), `key` (key or combo to tap through the JetKVM's USB keyboard), `move_by` (`DX,DY`: move its USB mouse, relative), `pos` (`X,Y` per-mille: its absolute pointer), `click` (`left`, `right`, `middle`) | JSON: state, codec, size, fps, decode errors, saved. Takes over the JetKVM's one session; password from `JETKVM_PASSWORD` | `jetkvm <address> [--duration] [--save] [--key] [--move] [--pos] [--click]` |
+| `jetkvms` | none | JSON: jetkvms [{id, address, name, isSetup}] found on this computer's networks | `jetkvms` |
 | `load_core` | `rbf` (required, a .rbf on this computer, or a .mgl whose core and files are already on the MiSTer), `dest` (folder on the MiSTer, default `/media/fat/_Development` or `core_dest`) | JSON: loaded (the path on the MiSTer) | `load-core <rbf> [--dest]` |
 
 Not tools: `soak` (an hours-long memory test that prints a line every few seconds) and `mcp` itself.

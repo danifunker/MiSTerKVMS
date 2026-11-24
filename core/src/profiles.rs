@@ -79,6 +79,12 @@ pub struct HostProfile {
     /// The Type Text box's speed for this host, in keys per second (cores
     /// take keystrokes differently: computer cores may need it slow).
     pub type_speed: f64,
+    /// Where keyboard and mouse go: "mrext", "jetkvm" (the JetKVM's USB, a
+    /// real USB keyboard and mouse to the MiSTer) or "auto" (the JetKVM's
+    /// when the video is a JetKVM, else mrext). A JetKVM's password isn't
+    /// kept here: the shell keeps it (Keychain, Credential Manager) and
+    /// hands it over with `set_jetkvm_password`.
+    pub input: String,
 }
 
 impl Default for HostProfile {
@@ -110,6 +116,7 @@ impl Default for HostProfile {
             cursor_lag_internet_ms: 0.0,
             cursor_gain_internet: 0.0,
             type_speed: crate::text::DEFAULT_TYPE_SPEED,
+            input: "auto".into(),
         }
     }
 }
@@ -159,6 +166,24 @@ impl HostProfile {
             _ if !self.stream.trim().is_empty() => SourceKind::Capture,
             _ if !self.local_video.is_empty() => SourceKind::Local,
             _ => SourceKind::Capture,
+        }
+    }
+
+    /// The JetKVM this host's video comes from (`local_video` of
+    /// `jetkvm://<address>`), by its address.
+    pub fn jetkvm_address(&self) -> Option<String> {
+        (self.source_kind() == SourceKind::Local)
+            .then(|| self.local_video.strip_prefix("jetkvm://"))
+            .flatten()
+            .map(|a| a.trim().trim_end_matches('/').to_string())
+            .filter(|a| !a.is_empty())
+    }
+
+    /// The JetKVM whose USB gets the keyboard and mouse, if any.
+    pub fn jetkvm_input(&self) -> Option<String> {
+        match self.input.as_str() {
+            "mrext" => None,
+            _ => self.jetkvm_address(),
         }
     }
 

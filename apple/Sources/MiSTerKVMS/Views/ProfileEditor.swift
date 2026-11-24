@@ -19,6 +19,9 @@ struct ProfileEditor: View {
     @State private var cards: [CaptureCard] = []
     @State private var audioInputs: [AudioInput] = []
     @State private var searchingCards = false
+    // A JetKVM as the "card": its password (Keychain) and address to add by hand.
+    @State private var jetkvmPassword = ""
+    @State private var jetkvmAddress = ""
 
     init(profile: HostProfile, onSave: @escaping (HostProfile) -> Void) {
         _profile = State(initialValue: profile)
@@ -76,6 +79,26 @@ struct ProfileEditor: View {
     private func chooseCard(_ card: CaptureCard) {
         profile.localVideo = card.id
         if !card.audio.isEmpty { profile.localAudio = card.audio }
+        loadJetKVMPassword()
+    }
+
+    private var isJetKVM: Bool { profile.localVideo.hasPrefix("jetkvm://") }
+
+    private func loadJetKVMPassword() {
+        jetkvmPassword = isJetKVM ? JetKVMPasswords.load(profile.localVideo) : ""
+    }
+
+    /// A JetKVM the scan didn't find (another network): by its address.
+    private func addJetKVM() {
+        let key = JetKVMPasswords.key(jetkvmAddress)
+        guard !key.isEmpty else { return }
+        let id = "jetkvm://\(key)"
+        if !cards.contains(where: { $0.id == id }) {
+            cards.append(CaptureCard(id: id, name: "JetKVM (\(key))", audio: ""))
+        }
+        profile.localVideo = id
+        jetkvmAddress = ""
+        loadJetKVMPassword()
     }
 
     private func showSource() {
@@ -94,7 +117,7 @@ struct ProfileEditor: View {
             Section {
                 Picker("Video & audio from", selection: $source) {
                     Text("MiSTerKVMS Capture (a stream on the network)").tag("capture")
-                    Text("A capture card on this Mac").tag("local")
+                    Text("A capture card on this Mac, or a JetKVM").tag("local")
                 }
             } header: {
                 Text("Video & audio")
@@ -108,10 +131,17 @@ struct ProfileEditor: View {
             case "local": cardSection
             default: streamSection
             }
+            if source == "local" && isJetKVM {
+                jetkvmSection
+            }
             if source == "local" {
-                Section("MiSTer (keyboard & mouse via mrext Remote)") {
+                Section {
                     TextField("MiSTer IP or hostname", text: $profile.misterHost, prompt: Text("192.168.1.50"))
                     TextField("mrext port", value: $profile.misterPort, format: .number.grouping(.never))
+                } header: {
+                    Text(isJetKVM && profile.input != "mrext"
+                         ? "MiSTer (optional: mrext Remote for the core's name)"
+                         : "MiSTer (keyboard & mouse via mrext Remote)")
                 }
             }
             Section("Mouse") {
@@ -139,7 +169,10 @@ struct ProfileEditor: View {
         }
         .formStyle(.grouped)
         .frame(width: 500)
-        .onAppear(perform: showSource)
+        .onAppear {
+            showSource()
+            loadJetKVMPassword()
+        }
         .onChange(of: source) { _, _ in showSource() }
         .onChange(of: finder.searching) { _, searching in if !searching { pickOnlyStream() } }
         .onDisappear { finder.stop() }
@@ -150,6 +183,9 @@ struct ProfileEditor: View {
                     profile.misterHost = profile.misterHost.trimmingCharacters(in: .whitespaces)
                     profile.stream = profile.stream.trimmingCharacters(in: .whitespaces)
                     profile.source = source
+                    if source == "local" && isJetKVM {
+                        JetKVMPasswords.save(jetkvmPassword, for: profile.localVideo)
+                    }
                     // Mouse scaling changed: the predictive cursor must relearn it.
                     if profile.rawMouse != original.rawMouse || profile.mouseSensitivity != original.mouseSensitivity {
                         profile.cursorGain = 0
@@ -220,7 +256,7 @@ extension ProfileEditor {
 
     @ViewBuilder fileprivate var cardSection: some View {
         Section {
-            LabeledContent("Capture card") {
+            LabeledContent(isJetKVM ? "JetKVM" : "Capture card") {
                 HStack(spacing: 6) {
                     Picker("Capture card", selection: Binding(
                         get: { profile.localVideo },
@@ -253,10 +289,36 @@ extension ProfileEditor {
                 }
             }
             if !searchingCards, cards.isEmpty {
-                Text("No capture cards found on this Mac.").font(.caption).foregroundStyle(.secondary)
+                Text("No capture cards or JetKVMs found.").font(.caption).foregroundStyle(.secondary)
+            }
+            LabeledContent("JetKVM not listed?") {
+                HStack(spacing: 6) {
+                    TextField("JetKVM address", text: $jetkvmAddress, prompt: Text("192.168.1.60"))
+                        .labelsHidden()
+                        .onSubmit(addJetKVM)
+                    Button("Add", action: addJetKVM).disabled(jetkvmAddress.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
             }
         } footer: {
             Text("Only one program can use a capture card at a time: close OBS or MiSTerKVMS Capture if they have it open. macOS asks once for Camera and Microphone access.")
+                .font(.caption)
+        }
+    }
+
+    @ViewBuilder fileprivate var jetkvmSection: some View {
+        Section {
+            SecureField("Password", text: $jetkvmPassword, prompt: Text("None"))
+            Picker("Keyboard & mouse", selection: Binding(
+                get: { profile.input == "mrext" ? "mrext" : "auto" },
+                set: { profile.input = $0 }
+            )) {
+                Text("Through the JetKVM's USB").tag("auto")
+                Text("Through mrext Remote").tag("mrext")
+            }
+        } header: {
+            Text("JetKVM")
+        } footer: {
+            Text("The password is kept in your Keychain. The JetKVM's USB is a real USB keyboard and mouse to the MiSTer. A JetKVM Mini only takes 1080p at 30 Hz (set it in MiSTer.ini) and has no HDMI sound: choose the input the MiSTer's sound goes to under Audio. One viewer at a time: opening the JetKVM's web page disconnects this Mac.")
                 .font(.caption)
         }
     }

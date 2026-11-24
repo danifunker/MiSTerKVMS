@@ -243,6 +243,7 @@
 					CoreAudio,
 					"-lobjc",
 					"-liconv",
+					"-lc++",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.danifunker.misterkvms;
 				PRODUCT_NAME = MiSTerKVMS;
@@ -295,6 +296,7 @@
 					CoreAudio,
 					"-lobjc",
 					"-liconv",
+					"-lc++",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.danifunker.misterkvms;
 				PRODUCT_NAME = MiSTerKVMS;

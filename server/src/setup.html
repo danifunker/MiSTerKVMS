@@ -81,7 +81,16 @@
       <div class="fields">
         <label>Name <input id="fName" required placeholder="MiSTer-SS1"></label>
         <label>Capture card <select id="fVideo"></select></label>
-        <div class="inline">
+        <div id="jetkvmFields" class="fields" hidden>
+          <label>JetKVM password <input id="fJetPw" type="password" autocomplete="new-password" placeholder="none"></label>
+          <label class="check" id="fJetClearRow" hidden><input type="checkbox" id="fJetClear"> Remove the saved password</label>
+          <label>Keyboard and mouse <select id="fInput">
+            <option value="auto">Through the JetKVM's USB (a real USB keyboard and mouse)</option>
+            <option value="mrext">Through mrext Remote</option>
+          </select></label>
+          <span class="hint">A JetKVM Mini only takes 1080p at 30 Hz: set the MiSTer's video_mode in MiSTer.ini (see docs/JETKVM.md). The Mini has no HDMI sound: pick the audio input the MiSTer's sound goes to.</span>
+        </div>
+        <div class="inline" id="formatRow">
           <label>Resolution <select id="fRes"></select></label>
           <label>Frame rate <select id="fFps"></select></label>
         </div>
@@ -109,6 +118,10 @@
     <h2>Capture cards</h2>
     <div id="devices" class="grid"></div>
     <div class="actions"><button id="refresh">Look for cards again</button></div>
+    <form class="inline" id="jetkvmAdd">
+      <label>JetKVM not found? Its address <input id="jetkvmAddress" placeholder="192.168.1.60"></label>
+      <button type="submit">Add JetKVM</button>
+    </form>
   </section>
 
   <section id="bgSection" hidden>
@@ -301,7 +314,7 @@ function startPreview(img) {
 
 function renderDevices() {
   const box = $("devices");
-  if (!devices.video.length) { box.innerHTML = `<p class="note">No capture cards found. Plug one in and press “Look for cards again”.</p>`; return; }
+  if (!devices.video.length) { box.innerHTML = `<p class="note">No capture cards or JetKVMs found. Plug a card in and press “Look for cards again”, or add a JetKVM by its address.</p>`; return; }
   box.innerHTML = devices.video.map(d => {
     // A stream that's off doesn't hold its card: it can be shown here.
     const stream = (state?.streams || []).find(s => s.config.video === d.id);
@@ -312,7 +325,7 @@ function renderDevices() {
       <div class="shot" id="dev-${btoa(unescape(encodeURIComponent(d.id))).replace(/[^a-z0-9]/gi, "")}"><div class="msg">${msg}</div></div>
       <div class="body">
         <div class="title">${esc(d.name)}${stream ? "" : `<button class="primary" data-use="${esc(d.id)}">Add as stream</button>`}</div>
-        <div class="row"><span>${d.formats.length ? `best: ${fmt(d.best)}` : `<span class="warn">no formats: in use by another app${service && service.platform === "linux" ? ", or no permission (the video group)" : service && service.platform === "macos" ? ", or no Camera permission (System Settings &gt; Privacy &amp; Security &gt; Camera)" : ", or a card Windows Media Foundation can't open (some AVerMedia cards)"}</span>`}</span></div>
+        <div class="row"><span>${isJetkvm(d.id) ? `JetKVM on the network: 1080p30 over WebRTC, keyboard and mouse through its USB` : d.formats.length ? `best: ${fmt(d.best)}` : `<span class="warn">no formats: in use by another app${service && service.platform === "linux" ? ", or no permission (the video group)" : service && service.platform === "macos" ? ", or no Camera permission (System Settings &gt; Privacy &amp; Security &gt; Camera)" : ", or a card Windows Media Foundation can't open (some AVerMedia cards)"}</span>`}</span></div>
         <div class="row"><span>audio: ${esc(d.audio || "none found")}</span></div>
       </div></div>`;
   }).join("");
@@ -337,6 +350,21 @@ function fillSelect(sel, items, value) {
 const PIXEL_ORDER = ["mjpeg", "nv12", "yuy2", "bgra"];
 const PIXEL_NAMES = { mjpeg: "MJPEG (compressed by the card)", nv12: "NV12 (raw)", yuy2: "YUY2 (raw)", bgra: "RGB (raw)" };
 const device = id => devices.video.find(d => d.id === id);
+const isJetkvm = id => (id || "").startsWith("jetkvm://");
+
+// A JetKVM: no formats to choose, but a password and where input goes.
+function jetkvmFields(s) {
+  const jet = isJetkvm($("fVideo").value);
+  $("jetkvmFields").hidden = !jet;
+  $("formatRow").hidden = jet;
+  if (!jet) return;
+  $("fJetPw").value = "";
+  const saved = !!(s && s.jetkvmPasswordSet);
+  $("fJetPw").placeholder = saved ? "saved (type to change)" : "none";
+  $("fJetClearRow").hidden = !saved;
+  $("fJetClear").checked = false;
+  $("fInput").value = s && s.config.input === "mrext" ? "mrext" : "auto";
+}
 const sameRate = (a, b) => Math.abs(a - b) < 0.05;
 
 function resolutions(d) {
@@ -393,6 +421,7 @@ function chosenFormat() {
 }
 
 function formatNote() {
+  if (isJetkvm($("fVideo").value)) { $("fFormatNote").textContent = ""; return; }
   const f = chosenFormat();
   $("fFormatNote").textContent = f ? `The card sends ${PIXEL_NAMES[f.pixel] || f.pixel}.` : "No formats: the card may be in use by another app.";
 }
@@ -408,6 +437,7 @@ function edit(name, deviceId) {
   fillFormat(id, s && s.format);
   fillSelect($("fAudio"), [["", "None"], ...devices.audio.map(a => [a.name, a.name])], s ? s.audio : (d && d.audio) || "");
   $("fMister").value = s ? s.mister : "";
+  jetkvmFields(name ? state.streams.find(s => s.config.name === name) : null);
   $("testResult").textContent = "";
   $("remove").hidden = !name;
   $("editorSection").hidden = false;
@@ -443,7 +473,17 @@ $("fVideo").onchange = () => {
   const id = $("fVideo").value, d = devices.video.find(d => d.id === id);
   fillFormat(id, null);
   if (d && d.audio) $("fAudio").value = d.audio;
+  jetkvmFields(editing ? state.streams.find(s => s.config.name === editing && s.config.video === id) : null);
   editorPreview();
+};
+$("jetkvmAdd").onsubmit = ev => {
+  ev.preventDefault();
+  const address = $("jetkvmAddress").value.trim().replace(/^(jetkvm|https?):\/\//, "").replace(/\/+$/, "");
+  if (!address) return;
+  const id = `jetkvm://${address}`;
+  if (!device(id)) devices.video.push({ id, name: `JetKVM (${address})`, formats: [], best: null, audio: null });
+  renderDevices();
+  edit(null, id);
 };
 $("fRes").onchange = () => fillRates(Number($("fFps").value));
 $("fFps").onchange = formatNote;
@@ -478,6 +518,13 @@ $("editor").onsubmit = async ev => {
     misterPort: old.misterPort || 8182,
     quality: old.quality || 85,
   };
+  if (isJetkvm(id)) {
+    config.format = null;
+    config.input = $("fInput").value;
+    // Blank: keep the saved password (the page never gets it back).
+    config.jetkvmPassword = $("fJetPw").value;
+    config.clearJetkvmPassword = $("fJetClear").checked;
+  }
   const list = state.streams.map(s => s.config).filter(c => c.name !== editing);
   list.push(config);
   try {
