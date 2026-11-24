@@ -8,11 +8,12 @@ KVM for MiSTer FPGA: keyboard/mouse to the MiSTer through mrext Remote, video an
 - `cli/`: `misterkvms-cli` (package `kvms-cli`): screenshots, recording, input, cores from the command line; JSON out. `mcp` serves it to agents (`cli/src/mcp.rs`, docs/MCP.md).
 - `mkvm/`: the mkvm protocol between the capture server and viewers.
 - `capture/`: capture cards, video + audio (`kvms-capture`).
+- `jetkvm/`: JetKVM client (`kvms-jetkvm`): WebRTC video decoded to BGRA, USB keyboard/mouse over hidrpc. docs/JETKVM.md.
 - `codec/`: picture encode/decode/convert/scale (`kvms-codec`).
 - `server/`: `misterkvms-capture`, the capture server.
 - `apple/`: macOS app (SwiftUI + AppKit). `ios/`: iPhone app.
 - `windows/`: WinUI 3 app (C#). `linux/`: GTK 4 + libadwaita app (Rust).
-- `docs/`: plans and handoffs (CAPTURE-SERVER, PORTING, IPHONE, MCP, BACKLOG).
+- `docs/`: plans and handoffs (CAPTURE-SERVER, PORTING, IPHONE, MCP, JETKVM, BACKLOG).
 - `scripts/`: builds and packaging.
 
 ## Build and test

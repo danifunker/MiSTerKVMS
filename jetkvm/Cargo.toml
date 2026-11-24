@@ -1,0 +1,15 @@
+[package]
+name = "kvms-jetkvm"
+description = "JetKVM client: WebRTC video (H.264 decoded to BGRA) and USB HID input over hidrpc."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+str0m = { version = "0.26", default-features = false, features = ["rust-crypto"] }
+openh264 = "0.9"
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+ureq = { version = "3", default-features = false, features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.23"

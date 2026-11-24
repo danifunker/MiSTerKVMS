@@ -201,6 +201,23 @@ const TOOLS: &[Tool] = &[
         ],
     },
     Tool {
+        name: "jetkvm",
+        command: "jetkvm",
+        description: "Connect to a JetKVM directly (no capture server) for a while and report what arrived (codec, size, \
+                      fps) as JSON; with key, tap that key or combo through the JetKVM's USB keyboard. Takes over the \
+                      JetKVM's single session. Password, if set, from JETKVM_PASSWORD in the server's environment.",
+        read_only: false,
+        params: &[
+            p("address", Pos, Str, true, "The JetKVM's address, e.g. 192.168.1.50."),
+            p("duration", Opt, Dur, false, "How long to watch (default 3s)."),
+            p("save", Opt, Path, false, "Save the last picture here as PNG."),
+            p("key", Opt, Str, false, "Key or combo to tap through the JetKVM, e.g. F12 or ctrl+alt+del."),
+            p("move_by", Opt, Str, false, "Move the JetKVM's USB mouse by DX,DY (relative counts), e.g. 200,-100."),
+            p("pos", Opt, Str, false, "Put its absolute pointer at X,Y in per-mille of the screen (0-1000), e.g. 500,500."),
+            p("click", Opt, Enum(&["left", "right", "middle"]), false, "Then click this mouse button (with the absolute pointer if pos is given)."),
+        ],
+    },
+    Tool {
         name: "streams",
         command: "streams",
         description: "List the capture server streams found on the network (name, address, which MiSTer each shows).",

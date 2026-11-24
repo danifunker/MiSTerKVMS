@@ -149,7 +149,7 @@ pub fn watch(address: &str, duration: Duration, limits: Limits, save: Option<&Pa
     }))
 }
 
-fn save_png(path: &Path, pic: &Bgra) -> Result<(), String> {
+pub(crate) fn save_png(path: &Path, pic: &Bgra) -> Result<(), String> {
     let file = std::fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut enc = png::Encoder::new(std::io::BufWriter::new(file), pic.width, pic.height);
     enc.set_color(png::ColorType::Rgb);

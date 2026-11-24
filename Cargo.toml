@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["capture", "codec", "core", "cli", "linux", "mkvm", "server", "uniffi-bindgen"]
+members = ["capture", "codec", "core", "cli", "jetkvm", "linux", "mkvm", "server", "uniffi-bindgen"]
 
 [workspace.package]
 version = "1.0.0"
@@ -9,3 +9,15 @@ license = "MIT"
 
 [profile.release]
 debug = 1
+
+# H.264 decoding (JetKVM video) is far too slow unoptimised: a debug build
+# fell to ~5 fps of ever-older pictures. Optimise the decoder (and the
+# BGRA conversion in kvms-jetkvm) even in dev.
+[profile.dev.package.openh264-sys2]
+opt-level = 3
+
+[profile.dev.package.openh264]
+opt-level = 3
+
+[profile.dev.package.kvms-jetkvm]
+opt-level = 3

@@ -3,6 +3,7 @@
 // Every command prints one JSON object on stdout (errors: JSON on stderr,
 // exit code 1), so it's easy to script.
 
+mod jetkvm;
 mod mcp;
 mod media;
 mod session;
@@ -146,6 +147,34 @@ enum Cmd {
         #[arg(long)]
         save: Option<PathBuf>,
     },
+    /// Connect to a JetKVM directly (no capture server) and report what
+    /// arrived: video codec, size, fps; optionally tap a key through its USB
+    /// keyboard. Takes over the JetKVM's one session. Password (if it has
+    /// one) from JETKVM_PASSWORD.
+    Jetkvm {
+        /// The JetKVM's address, e.g. 192.168.1.50 or jetkvm.local.
+        address: String,
+        #[arg(long, default_value = "3s")]
+        duration: String,
+        /// Save the last picture as PNG.
+        #[arg(long)]
+        save: Option<PathBuf>,
+        /// Tap this key or combo through the JetKVM's USB keyboard (e.g.
+        /// F12, ctrl+alt+del), once video is up.
+        #[arg(long)]
+        key: Option<String>,
+        /// Move the JetKVM's USB mouse by DX,DY (relative, in mouse
+        /// counts), e.g. 200,-100.
+        #[arg(long = "move", allow_hyphen_values = true)]
+        move_by: Option<String>,
+        /// Put the JetKVM's absolute pointer at X,Y, in per-mille of the
+        /// screen (0-1000), e.g. 500,500 for the middle.
+        #[arg(long)]
+        pos: Option<String>,
+        /// Then click this button: left, right or middle.
+        #[arg(long)]
+        click: Option<String>,
+    },
     /// List capture server streams found on the network.
     Streams {
         #[arg(long, default_value = "2s")]
@@ -262,6 +291,11 @@ fn exec(cmd: Cmd, s: &Settings) -> Result<Value, String> {
                 None => None,
             };
             stream::watch(&address, duration(&d)?, stream::Limits { max, fps, quality }, save.as_deref())
+        }
+        Cmd::Jetkvm { address, duration: d, save, key, move_by, pos, click } => {
+            let password = std::env::var("JETKVM_PASSWORD").ok();
+            let input = jetkvm::Input { key, move_by, pos, click };
+            jetkvm::probe(&address, password.as_deref(), duration(&d)?, save.as_deref(), input)
         }
         Cmd::Streams { wait } => {
             let found = kvms_core::discover::find_streams(duration(&wait)?.as_millis() as u32);
