@@ -823,8 +823,44 @@ mod win {
         log(if failed { "service: stopping (failed)" } else { "service: stopping" });
         report(ServiceState::StopPending, 0, 5);
         report(ServiceState::Stopped, if failed { 1 } else { 0 }, 0);
-        // Capture threads hold cards: end the process rather than unwinding them.
-        std::process::exit(if failed { 1 } else { 0 });
+        end_process(if failed { 1 } else { 0 });
+    }
+
+    /// End this process now. Capture threads hold cards, so don't unwind
+    /// them; and not `process::exit`, whose DLL shutdown (Media Foundation,
+    /// DirectShow, audio) can deadlock with those threads still running,
+    /// leaving a stopped service's process alive, as SYSTEM, which a user
+    /// can't end (and an update can't replace its program).
+    fn end_process(code: u32) -> ! {
+        use windows::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
+        unsafe {
+            let _ = TerminateProcess(GetCurrentProcess(), code);
+        }
+        std::process::exit(code as i32)
+    }
+
+    /// Wait up to `wait` for process `pid` to end; if it hasn't, terminate it
+    /// and wait again. For a stopped service's process that hung on its way
+    /// out. True once it's gone.
+    fn make_sure_ended(pid: u32, wait: Duration) -> bool {
+        use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+        use windows::Win32::System::Threading::{OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE};
+        unsafe {
+            let Ok(process) = OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_TERMINATE, false, pid) else {
+                return true; // already gone (or not ours to see)
+            };
+            let mut gone = WaitForSingleObject(process, wait.as_millis() as u32) == WAIT_OBJECT_0;
+            if !gone {
+                log(&format!("service: the old process ({pid}) is still running; ending it"));
+                let _ = TerminateProcess(process, 1);
+                gone = WaitForSingleObject(process, 15_000) == WAIT_OBJECT_0;
+                if !gone {
+                    log(&format!("service: the old process ({pid}) didn't end (stuck in a driver?)"));
+                }
+            }
+            let _ = CloseHandle(process);
+            gone
+        }
     }
 
     /// The service has no console: send the log (stderr) to `capture.log`,
@@ -914,23 +950,36 @@ mod win {
         if same_file(&exe, &target) {
             return Ok(target);
         }
-        if let Ok(service) = manager.open_service(NAME, ServiceAccess::QUERY_STATUS | ServiceAccess::STOP) {
+        let mut was_running = None;
+        if let Ok(service) = manager.open_service(NAME, ServiceAccess::QUERY_STATUS | ServiceAccess::STOP | ServiceAccess::START) {
+            // Its process: "stopped" is reported before the process is gone.
+            let pid = service.query_status().ok().and_then(|s| s.process_id);
             if service.stop().is_ok() {
                 wait_for(&service, ServiceState::Stopped, 20)?;
+                if let Some(pid) = pid {
+                    make_sure_ended(pid, Duration::from_secs(10));
+                }
+                was_running = Some(service);
             }
         }
         let folder = target.parent().expect("has a folder");
         std::fs::create_dir_all(folder).map_err(|e| format!("{}: {e}", folder.display()))?;
-        // The stopped service's process may hold the file for a moment.
+        // The old process may hold the file a moment longer (antivirus too).
         let mut tries = 0;
         loop {
             match std::fs::copy(&exe, &target) {
                 Ok(_) => return Ok(target),
-                Err(_) if tries < 20 => {
+                Err(_) if tries < 60 => {
                     tries += 1;
-                    std::thread::sleep(Duration::from_millis(250));
+                    std::thread::sleep(Duration::from_millis(500));
                 }
-                Err(e) => return Err(format!("can't copy the program to {}: {e}", target.display())),
+                Err(e) => {
+                    // Don't leave the old service stopped.
+                    if let Some(service) = was_running {
+                        let _ = service.start::<&OsStr>(&[]);
+                    }
+                    return Err(format!("can't copy the program to {} (the old one kept running): {e}", target.display()));
+                }
             }
         }
     }

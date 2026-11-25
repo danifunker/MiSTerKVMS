@@ -243,6 +243,19 @@ jobs:
           path: build/misterkvms-capture-${{ env.VERSION }}-win-x64.exe
           archive: false
 
+      # The capture server's installer for new installs (Inno Setup is on the
+      # runner): it runs the program's own `service install`.
+      - name: Capture server installer
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:VERSION" "/DSourceExe=$PWD\build\misterkvms-capture-$env:VERSION-win-x64.exe" "/O$PWD\build" windows\installer\capture.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: build/MiSTerKVMS-Capture-Setup-${{ env.VERSION }}-win-x64.exe
+          archive: false
+
   build-linux:
     needs: version
     runs-on: ubuntu-24.04
@@ -621,7 +634,7 @@ jobs:
 
           **Windows:** 64-bit Windows 10 or 11. Unzip \`MiSTerKVMS-$VERSION-win-x64.zip\` anywhere and run **MiSTerKVMS.exe**. Not code-signed yet: SmartScreen may warn the first time (More info → Run anyway). Recording needs [ffmpeg](https://ffmpeg.org) (\`winget install ffmpeg\`).
 
-          **MiSTerKVMS Capture** (the PC with the capture cards): run \`misterkvms-capture.exe\` from the Windows zip; on a Mac it comes with the app: MiSTerKVMS > Settings > Capture Server > **Run in the background** (it starts at login and updates with the app). Its setup page is at http://localhost:5971: add a stream for each card there. On Windows, **Run in the background** installs it as a service that starts with the PC, and **Check for updates** updates it from these releases (\`misterkvms-capture-$VERSION-win-x64.exe\`). In the app, add a host and pick the stream, or a capture card plugged into that computer (Windows and Mac).
+          **MiSTerKVMS Capture** (the PC with the capture cards or JetKVMs): on Windows, run \`MiSTerKVMS-Capture-Setup-$VERSION-win-x64.exe\` (installs it as a service that starts with the PC, and opens its setup page), or run \`misterkvms-capture.exe\` from the Windows zip; on a Mac it comes with the app: MiSTerKVMS > Settings > Capture Server > **Run in the background** (it starts at login and updates with the app). Its setup page is at http://localhost:5971: add a stream for each card there. On Windows, **Run in the background** installs it as a service that starts with the PC, and **Check for updates** updates it from these releases (\`misterkvms-capture-$VERSION-win-x64.exe\`). In the app, add a host and pick the stream, or a capture card plugged into that computer (Windows and Mac).
 
           **MiSTerKVMS Capture on Linux** (x86_64, systemd): \`sudo apt install ./misterkvms-capture-$VERSION-linux-amd64.deb\` on Debian/Ubuntu (it runs as a service at boot; set it up at http://localhost:5971), or from the Linux tarball below: \`sudo ./misterkvms-capture service install\`. Capture cards through Video4Linux (USB sticks, cards with a V4L2 driver).
 

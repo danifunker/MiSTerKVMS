@@ -52,6 +52,8 @@ The JetKVM's own login is plain HTTP on the LAN; that's the device (its web page
 - **Other JetKVMs:** try `video_mode=0` (720p60) to see whether the mode is the problem.
 - Still nothing: try the HDMI cable that works with another device (the DE10-Nano's HDMI is weak with long cables), and restart the MiSTer while the JetKVM is already on.
 
+**The picture stops after about 90 seconds, then comes back.** Fixed: the JetKVM closes a signaling connection that sends it nothing for 90 s, and the session with it. The client now sends "ping" every 20 s (as the JetKVM's web page does), and ends its session as soon as the JetKVM closes the connection, so the capture server or app reconnects at once.
+
 **Another viewer took over / the picture stops.** A JetKVM has one session: opening its web page, or another app connecting directly, disconnects the current one. Use the capture server when more than one person watches.
 
 **Keys repeat or stick.** The client sends one press and one release per key (hidrpc type `0x05`). On the Mini, a full keyboard report with no keys did not release them.

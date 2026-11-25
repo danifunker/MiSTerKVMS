@@ -673,6 +673,10 @@ fn tidy_answer(sdp: &str) -> String {
     out.join("\r\n")
 }
 
+/// How often the signaling socket says it's alive (the JetKVM drops it
+/// after 90 s of silence).
+const SIGNAL_PING_EVERY: Duration = Duration::from_secs(20);
+
 fn signal_loop(mut ws: tungstenite::WebSocket<TcpStream>, tx: Sender<Cmd>, stop: Arc<AtomicBool>) {
     #[derive(Deserialize)]
     struct Msg {
@@ -683,9 +687,24 @@ fn signal_loop(mut ws: tungstenite::WebSocket<TcpStream>, tx: Sender<Cmd>, stop:
         #[serde(default)]
         error: Option<serde_json::Value>,
     }
+    // The JetKVM never pings: it closes a signaling socket that sends it
+    // nothing for 90 s, and the session goes with it (the Mini's firmware,
+    // webrtc_websocket.c). Its web page sends "ping" (it answers "pong"):
+    // do the same, well inside that.
+    let mut pinged = Instant::now();
     while !stop.load(Ordering::Relaxed) {
+        if pinged.elapsed() >= SIGNAL_PING_EVERY {
+            pinged = Instant::now();
+            if let Err(e) = ws.send(tungstenite::Message::text("ping")) {
+                let _ = tx.send(Cmd::SignalClosed(format!("signaling: {e}")));
+                return;
+            }
+        }
         match ws.read() {
             Ok(tungstenite::Message::Text(t)) => {
+                if t.as_str() == "pong" {
+                    continue;
+                }
                 let Ok(m) = serde_json::from_str::<Msg>(&t) else { continue };
                 if let Some(e) = m.error {
                     let _ = tx.send(Cmd::SignalClosed(format!("JetKVM refused the session: {e}")));
@@ -872,18 +891,13 @@ impl Worker {
                     }
                 }
             }
-            Cmd::SignalClosed(why) => {
-                // After connecting, the media keeps going without signaling.
-                if !matches!(self.state(), State::Connected { .. }) {
-                    return Err(why);
-                }
-            }
+            // The JetKVM ends the session with its signaling socket (idle,
+            // HDMI mode change, another viewer): end here too, at once, so
+            // whoever opened it reconnects instead of waiting for ICE to
+            // notice the media stopped (some 20 s).
+            Cmd::SignalClosed(why) => return Err(why),
         }
         Ok(())
-    }
-
-    fn state(&self) -> State {
-        self.shared.0.lock().unwrap().state.clone().unwrap_or(State::Signaling)
     }
 
     /// Poll until the engine wants to wait; returns when to wake up.
